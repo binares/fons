@@ -31,4 +31,4 @@ TEST2:
    borrow_meta: true
 
    
-TEST3: test_io_update_settings_TEST3.yaml
+TEST3: test_io_update_settings_TEST3_COPY.yaml

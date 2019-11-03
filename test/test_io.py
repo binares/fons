@@ -1,4 +1,5 @@
 import os
+from shutil import copy2
 import pytest
 import datetime
 dt = datetime.datetime
@@ -7,10 +8,17 @@ import fons.io as io
 
 fdir = os.path.dirname(__file__)
 PARAMS_PATH = fdir + '\\test_io_read_params.txt'
-SAVE_PATH = fdir + '\\test_io_read_params_out.txt'
-SETTINGS_PATH = fdir + '\\test_io_update_settings.yaml'
-SETTINGS_TEST3_PATH = fdir + '\\test_io_update_settings_TEST3.yaml'
+PARAMS_SAVE_PATH = fdir + '\\test_io_read_params_out.txt'
+_SETTINGS_PATH = fdir + '\\test_io_update_settings.yaml'
+SETTINGS_PATH = fdir + '\\test_io_update_settings_COPY.yaml'
+_SETTINGS_TEST3_PATH = fdir + '\\test_io_update_settings_TEST3.yaml'
+SETTINGS_TEST3_PATH = fdir + '\\test_io_update_settings_TEST3_COPY.yaml'
 SETTINGS_NO_INDENT_PATH = fdir + '\\test_io_update_settings_no_indent.yaml'
+
+#Copy the files, for eGit purposes 
+#(if we don't copy and just overwrite the original, it thinks they've been updated)
+copy2(_SETTINGS_PATH, SETTINGS_PATH)
+copy2(_SETTINGS_TEST3_PATH, SETTINGS_TEST3_PATH)
 
 p_expected = {
     'token': "jrhyyiycfev:j4vjxh7p06wsf1061wukwvjs3hnhm8",
@@ -48,16 +56,16 @@ def test_read_params_raises_KeyError():
 def test_save_params():
     now = dt.utcnow().isoformat()
     
-    io.save_params(SAVE_PATH, {'newKey': now}, read_path=PARAMS_PATH)
+    io.save_params(PARAMS_SAVE_PATH, {'newKey': now}, read_path=PARAMS_PATH)
     
-    p = io.read_params(SAVE_PATH)
+    p = io.read_params(PARAMS_SAVE_PATH)
     
     assert p['newKey'] == now
     
     for k,v_expected in p_expected.items():
         assert p[k] == v_expected
     
-    os.remove(SAVE_PATH)
+    os.remove(PARAMS_SAVE_PATH)
         
 
 #---------------------------
@@ -183,6 +191,6 @@ def test_update_settings_modified_time():
         assert len(d) > 1
     
     d = {}
-
+    
     _verify(d, SETTINGS_PATH)
-    _verify(d, SETTINGS_TEST3_PATH)    
+    _verify(d, SETTINGS_TEST3_PATH)
