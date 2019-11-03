@@ -1,0 +1,34 @@
+__config__: TEST3
+__default__: default
+
+default:
+  abc: abcvalue
+  edf: true
+  ijh: {"k": {"l": null}}
+  opq: 1
+
+  __meta__:
+   borrow_keys: false
+   interval: 10
+   1st_only: ["edf"]
+  
+
+TEST:
+  abc: {"_type_": "str", "_value_": "test_abcvalue"}
+  edf: false
+  ijh: {"k": {"l": "lV", "m": "mV"}}
+ 
+  __meta__:
+   borrow_keys: true
+   interval: 20
+
+
+TEST2:
+  abc: null
+  opq: 2
+
+  __meta__:
+   borrow_meta: true
+
+   
+TEST3: test_io_update_settings_TEST3.yaml

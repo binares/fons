@@ -1,0 +1,5 @@
+abc: test3_abcvalue
+ijh: {"k": {"m": "t3mV"}}
+
+__meta__:
+  borrow_meta: true

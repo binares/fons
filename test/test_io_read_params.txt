@@ -1,0 +1,43 @@
+[token] "jrhyyiycfev:j4vjxh7p06wsf1061wukwvjs3hnhm8"
+[contacts] {"self": 8711851293646172144751, "rndm": 234}
+[atpl] [false, true, true, false]
+[<2>] ["sth", "other"]
+[2] ["sth", "other2"]
+[<null>] ["sth", "other"]
+a [<null>]	["sth","other"]
+[end] "//"
+[<"<>">] 2.4
+
+/ /
+
+//{"token"}	"jrhyyiycfev:j4vjxh7p06wsf1061wukwvjs3hnhm8"
+//{"contacts"} 	{"self": 8711851293646172144751, "rndm":234}
+//{"atpl"} 	[false,true,true,false]
+//{2}		("sth","other")
+
+//{token}	"jrhyyiycfev:j4vjxh7p06wsf1061wukwvjs3hnhm8"
+//{contacts} 	{"self": 8711851293646172144751, "rndm":234}
+//{atpl} 	[false,true,true,false]
+//{<2>}		("sth","other")
+
+//<token>	"jrhyyiycfev:j4vjxh7p06wsf1061wukwvjs3hnhm8"
+//<contacts> 	{"self": 8711851293646172144751, "rndm": 234}
+//<atpl> 	[false,true,true,false]
+//<2>		("sth","other")
+
+//Notes
+//a[<null>] and / / should warn about damaged line
+//json does not support tuples. nor loading non-str dict keys
+//[token] "jrhyyiycfev:j4vjxh7p06wsf1061wukwvjs3hnhm8"
+//[contacts<dict<int>>] {self: 8711851293646172144751, rndm:234}
+//[atpl<tuple<bool>>] [False,true,TRUE,false]
+
+[NEW_PARAM] ["a", "list"]
+[NEW_PARAM2] {"its k": "its v"}
+//New comselfnt.
+//New comselfnt2.
+
+[613524184:xxpOiJ683r6iNvbCtgA2J4QD817FSTnfP] {"its k": "its v"}
+[newKey] "2018-08-04T08:24:58.616229"
+
+// (all tokens were randomly generated)
