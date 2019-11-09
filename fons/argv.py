@@ -1,4 +1,5 @@
 from collections import defaultdict
+import itertools
 import copy as _copy
 
 from fons.iter import unique
@@ -234,6 +235,9 @@ class Argv:
         
     def __getitem__(self, key):
         return self.map[key]
+    
+    def __iter__(self):
+        return itertools.chain(self.mapped, self.non_mapped)
     
     def __contains__(self, key):
         return self.contains(key)
