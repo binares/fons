@@ -1,6 +1,18 @@
 import copy as _copy
 from collections import namedtuple, OrderedDict
 
+class DelType:
+    def __call__(self, other):
+        return isinstance(other, DelType)
+    def __copy__(self):
+        return self
+    def __deepcopy__(self, memo):
+        return self
+    
+#This object as a dict value signifies that 
+#its key is to be deleted in deep_update()
+DEL = DelType()
+
 
 def nt_to_od(namedtuple_or_form, fill=None):
     nf = namedtuple_or_form
@@ -124,17 +136,53 @@ def _is_dominant(new_value, old_value, hierarchy):
                 raise ValueError({m: item})
             
     return True
-    
+
+
+def _is_shallow(key, shallow):
+    if not isinstance(shallow, dict):
+        return key in shallow
+    else:
+        x = shallow[key]
+        if hasattr(x, '__iter__') or hasattr(x, '__getitem__'):
+            return False
+        else:
+            return bool(x)
+        
+
+def _drop_dels(d, copy=False):
+    if not isinstance(d, dict):
+        return d if not copy else _copy.deepcopy(d)
+    elif copy:
+        dict_class = type(d)
+        return dict_class((k, _drop_dels(v, copy))
+                          for k,v in d.items() if not DEL(v))
+    else:
+        for k,v in tuple(d.items()):
+            if DEL(v):
+                del d[k]
+            else:
+                _drop_dels(v, copy)
+        return d
+        
     
 def deep_update(obj, new, copy=False, hierarchy={}, **kw):
     if not isinstance(obj,dict) or not isinstance(new,dict):
-        return new if not copy else _copy.deepcopy(new)
+        return _drop_dels(new, copy=copy)
+    
+    shallow = kw.pop('shallow', None)
+    if shallow is not None:
+        shallow_keys = [k for k in new if _is_shallow(k, shallow)]
+    else:
+        shallow_keys = []
+        
+    get_sub_shallow = (lambda k: shallow.get(k)) if isinstance(shallow, dict) else\
+                      (lambda k: None)
     
     _is_dom = kw.get('_is_dominant')
     if _is_dom is None:
         _is_dom = (lambda x,y,h: True) if not hierarchy else _is_dominant
         kw['_is_dominant'] = _is_dom
-    
+        
     new_doms = set(k for k,v in new.items() 
                     if k not in obj or _is_dom(v, obj[k], hierarchy))
     
@@ -148,8 +196,19 @@ def deep_update(obj, new, copy=False, hierarchy={}, **kw):
                for k,v in _old.items()}
     
     for kN,vN in new.items():
-        if kN in new_doms:
-            obj[kN] = deep_update(_old.get(kN), vN, copy, hierarchy, **kw)
+        if DEL(vN):
+            try:
+                del obj[kN]
+            except KeyError:
+                pass
+            
+        elif kN in new_doms:
+            if kN in shallow_keys:
+                obj[kN] = _drop_dels(vN, copy)
+            else:
+                
+                obj[kN] = deep_update(_old.get(kN), vN, copy, hierarchy, 
+                                      shallow=get_sub_shallow(kN), **kw)
         
         
     return obj
