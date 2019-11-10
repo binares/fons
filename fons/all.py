@@ -40,7 +40,7 @@ from fons.math.round import (round_sd, ignore_half_round, round)
 from fons.math.graph import (find_shortest_path, create_graph)
 
 import fons.crypto as crypto
-from fons.crypto import (nonce, nonce_ms, sign)
+from fons.crypto import (nonce, nonce_ms, sign, password_encrypt, password_decrypt)
 
 import fons.argv as argv
 import fons.dict_ops as dict_ops
