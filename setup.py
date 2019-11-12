@@ -21,6 +21,7 @@ setup(
    install_requires=[
        'aiohttp>=3.0',
        'requests>=2.0',
+       'cryptography>=1.8',
        'filelock>=3.0',
        'ntplib>=0.3.3',
        #these three are already required by pandas
@@ -28,6 +29,6 @@ setup(
        #'python_dateutil>=2.1',
        #'pytz>=2011',
        'pandas>=0.21',
-       'PyYAML>=3.10, <5',
+       'PyYAML>=3.10',
    ],
 )

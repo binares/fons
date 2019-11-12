@@ -331,7 +331,7 @@ def _load_settings(path, ftype, create, meta, force_update, return2):
     
     if ftype in ('yaml','yml'):
         with open(path, encoding='utf-8') as f:
-            new = yaml.load(f) or {}
+            new = yaml.safe_load(f) or {}
     elif ftype == 'json':
         with open(path, encoding='utf-8') as f:
             new = json.load(f) or {}
