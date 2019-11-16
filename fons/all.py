@@ -86,6 +86,9 @@ from fons.func import (limitcalls, limitcalls_f, limitcalls_m,
 import fons.py as py
 from fons.py import (mro, rreload)
 
+import fons.pyops as pyops
+from fons.pyops import exec_op
+
 import fons.errors as e
 
 logger,logger2,tlogger,tloggers,tlogger0 = log.get_standard_5(__name__)

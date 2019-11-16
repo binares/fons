@@ -7,6 +7,19 @@ _TYPES = tuple([cls for cls in object.__subclasses__() if cls.__name__ in TYPES]
 IMMUTABLES = (int, float, str, bool, tuple, type(None))
 COPY_METHOD = (pd.DataFrame, pd.Series, pd.DatetimeIndex, pd.Index, np.ndarray)
 
+OPS = {
+    '==': lambda x,y: x==y,
+    '!=': lambda x,y: x!=y,
+    '>': lambda x,y: x>y,
+    '>=': lambda x,y: x>=y,
+    '<=': lambda x,y: x<=y,
+    '<': lambda x,y: x<y,
+    'in': lambda x,y: x in y,
+    'not in': lambda x,y: x not in y,
+    'is': lambda x,y: x is y,
+    'is not': lambda x,y: x is not y,
+}
+
 
 def update_obj(obj, new):
     istuple = isinstance(obj,tuple)
@@ -43,6 +56,18 @@ def update_obj(obj, new):
 
 
 #---------------------------------------
+
+def exec_op(x, y, op="=="):
+    function = OPS.get(op)
+    
+    if function is None:
+        if not isinstance(op, str):
+            raise TypeError('Operation is of unknown type: {}'.format(type(op)))
+        else:
+            raise ValueError('Unknown operation: {}'.format(op))
+
+    return function(x, y)
+
 
 def compare(x, norm, type_op='isinstance'):
     
