@@ -564,6 +564,7 @@ def _update_keys(meta, old, config_dict, default_dict, counter,
     v_params = dict({'missing': 'ignore', 'extra': 'error'}, **v_params) #??
     
     new_dict = {}
+    new_last_input = {}
     exc = None
     
     for k in selected_keys:
@@ -578,7 +579,7 @@ def _update_keys(meta, old, config_dict, default_dict, counter,
         if new_val is None and k in old and not null_overwrite: continue
         elif k in last_input and new_val == last_input[k]: continue
         
-        last_input[k] = _copy.deepcopy(new_val)
+        new_last_input[k] = _copy.deepcopy(new_val)
         
         if init:
             try: new_val = init_data(new_val)
@@ -602,7 +603,7 @@ def _update_keys(meta, old, config_dict, default_dict, counter,
             
         new_dict[k] = new_val
         
-    return new_dict, exc
+    return new_dict, new_last_input, exc
         
 
 def update_settings(new, old=None, verify=None,*, ftype=None,
@@ -656,7 +657,8 @@ def update_settings(new, old=None, verify=None,*, ftype=None,
     init = _get_param(meta, 'init', init)
     deep = _get_param(meta, 'deep', deep)
     
-    new_dict, exc = _update_keys(meta, old, config_dict, default_dict, counter,
+    new_dict, new_last_input, exc = \
+                    _update_keys(meta, old, config_dict, default_dict, counter,
                                  config, default, exclude, init, verify, v_params,
                                  raise_errors)
     
@@ -672,6 +674,8 @@ def update_settings(new, old=None, verify=None,*, ftype=None,
         deep_update(old, new_dict)
     else:
         old.update(new_dict)
+        
+    meta['last_input'].update(new_last_input)
     
     return old
 
