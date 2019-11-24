@@ -264,4 +264,55 @@ def consume(iterator, n=None):
     else:
         # advance to the empty slice starting at position n
         next(itertools.islice(iterator, n, n), None)
+        
+        
+def sequence_insert(seq, ins_to, *, key=None, duplicates='keep', sort=False):
+    """Inserts sequence items into `ins_to`. Items in both arrays must be sortable (by `key`),
+        and both arrays must be sorted beforehand in ascending order.
+       sequence_insert([{'a': 2},{'a': 5}], [{'a': 2, 'x': 15}, {'a': 4}],
+                                    key=lambda x: x['a'], duplicates='drop') ->
+           -> ins_to = [{'a': 2, 'x': 15}, {'a': 4}, {'a': 5}]
+       
+       :param duplicates: if 'drop', duplicates are dropped, where keep='last';
+                          if 'keep', do [..., old_item, equal_new_item_here, ..]
+       :param sort: if True, first sorts `seq` (not `ins_to`!)
+       :returns: None"""
+    if duplicates not in ('keep','drop'):
+        raise ValueError(duplicates)
+    if sort:
+        seq = sorted(seq, key=key)
+    
+    drop = (duplicates=='drop')
+    is_deque = isinstance(ins_to, collections.deque)
+    key = (lambda x: x) if key is None else key
+    
+    for this in seq:
+        compare_this = key(this)
+        try:
+            i, are_equals = next((-i,key(x)==compare_this) 
+                                        for i,x in enumerate(reversed(ins_to)) 
+                                    if compare_this>=key(x))
+            if i == 0 and (not are_equals or not drop):
+                i = None 
+        except StopIteration:
+            i, are_equals = (0, False)
+            
+        if are_equals and drop:
+            ins_to[i-1] = this
+        else:
+            if i is None:
+                ins_to.append(this)
+            else:
+                #[2,3,4].insert(-1,5) ->
+                #[2,3,5,4]
+                try:
+                    ins_to.insert(i, this)
+                except IndexError as e:
+                    if is_deque:
+                        ins_to.popleft()
+                        ins_to.insert(i, this)
+                    else:
+                        raise e
+                    
+    return None
 

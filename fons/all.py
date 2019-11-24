@@ -53,7 +53,8 @@ import fons.verify as verify
 
 from fons.argv import parse_argv
 from fons.dtype.dtype import (DType, ShadowMerger)
-from fons.iter import (flatten, flatten2, flatten_dict, fliter, is_flat, unique, consume)
+from fons.iter import (flatten, flatten2, flatten_dict, fliter, is_flat, unique, consume,
+                       sequence_insert)
 from fons.dict_ops import (nt_to_od, od_to_nt, apply_until_get, deep_get, deep_update)
 from fons.verify import (init_data, verify_data)
 

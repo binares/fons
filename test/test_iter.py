@@ -1,9 +1,11 @@
-from collections import namedtuple
+from collections import namedtuple, deque
+from copy import deepcopy
 import pandas as pd
 import numpy as np
 import pytest
 
-from fons.iter import (unique, flatten, flatten_dict, fliter)
+from fons.iter import (unique, flatten, flatten_dict, fliter,
+                       sequence_insert)
 
 nd = namedtuple('nd',('a'))
 nd2 = namedtuple('nd2',('a b'))
@@ -141,3 +143,50 @@ def test_flatten_dict():
     
 def test_fliter():
     assert(fliter(fl_inp(), astype=list)) == fl_expected0_include_all
+    
+    
+#---------------
+
+seq_insert_params = [
+    [
+        [0,1,2,3,5,11,17,19],
+        [2,3,7,11],
+        None,
+        'drop',
+        [0,1,2,3,5,7,11,17,19],
+    ],
+    [   
+        [['a',0],['a',1],['a',2],['a',3],['a',5],['a',11],['a',17],['a',19]],
+        [['',2],['',3],['',7],['',11]],
+        lambda x: x[1],
+        'drop',
+        [['a',0],['a',1],['a',2],['a',3],['a',5],['',7],['a',11],['a',17],['a',19]],
+    ],
+    [
+        [0,1,2,3,5,11,17,19],
+        [2,3,7,11],
+        None,
+        'keep',
+        [0,1,2,2,3,3,5,7,11,11,17,19],
+    ],
+    [   
+        [['a',0],['a',1],['a',2],['a',3],['a',5],['a',11],['a',17],['a',19]],
+        [['',2],['',3],['',7],['',11]],
+        lambda x: x[1],
+        'keep',
+        [['a',0],['a',1],['',2],['a',2],['',3],['a',3],['a',5],['',7],['',11],['a',11],['a',17],['a',19]],
+    ]
+]
+seq_insert_params += [
+        [x[0], deque(x[1]), x[2], x[3], deque(x[4])]
+    for x in deepcopy(seq_insert_params)]
+#deque(x, maxlen=n) keeps only x[-n:]
+seq_insert_params += [
+        [x[0], deque(x[1], maxlen=8), x[2], x[3], deque(x[4], maxlen=8)]
+    for x in deepcopy(seq_insert_params)]
+
+
+@pytest.mark.parametrize('seq,ins_to,key,duplicates,expected',seq_insert_params)
+def test_sequence_insert(seq, ins_to, key, duplicates, expected):
+    sequence_insert(seq, ins_to, key=key, duplicates=duplicates)
+    assert ins_to == expected
