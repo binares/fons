@@ -76,7 +76,7 @@ def call_via_loop(func, args=None, kwargs=None,*, future=None,
     if kwargs is None: kwargs = {}
     
     if future is not None: pass
-    elif module == 'asyncio': future = asyncio.Future()
+    elif module == 'asyncio': future = asyncio.Future(loop=cb_loop)
     else: future = concurrent.futures.Future()
     
     if loop is None:
