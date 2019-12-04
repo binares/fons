@@ -2,6 +2,7 @@ from functools import wraps
 from inspect import (currentframe, getargvalues, getfullargspec)
 
 import traceback
+import platform
 import copy
 import time
 import datetime
@@ -27,6 +28,8 @@ _LIMITCALLS_LOGGING_LEVEL = logging.WARNING
 _LIMITCALLS_SLEEP_LOGGING_LEVEL = logging.DEBUG
 _LIMITCALLS_WARN_WHEN_SLEEP = False
 _LIMITCALLS_RETAIN_ORDER = False
+
+_PLATFORM = platform.system()
 
 
 #If method called as static, initializes necessary attributes (passed as kwargs)
@@ -546,7 +549,8 @@ async def _async_handle_request(func, PARAMS, LOCKS, HISTORY, instance=None):
         #If action is 'sleep', in every cycle the lock will be released before the sleep,
         # (so that the other calls don't have to wait), then acquired again
         # repeated until time_short > 0 
-
+        lowest = 0.001 if _PLATFORM != 'Windows' else 0.016
+        
         while True:
             nearest_next = deq[0] + interval
             wait_time = nearest_next - time.time()
@@ -555,7 +559,7 @@ async def _async_handle_request(func, PARAMS, LOCKS, HISTORY, instance=None):
             #Note that on asyncio asleeping nything below 1 ms won't work
             # and on Windows it may sleep as much as ~15 ms less
             # However the while loop will eliminate that problem.
-            wait_time = max(0.016, wait_time)
+            wait_time = max(lowest, wait_time)
             msg = _get_msg(func, instance, 'calls blocked for {}s.'.format(round(wait_time, 2)))
             await _async_handle_action(action, msg, logging_lvl, WaitException, [wait_time],
                                        {'msg':msg}, wait_time, lock, retain_order=retain_order)

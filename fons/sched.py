@@ -1,17 +1,15 @@
 import abc
-import threading
 import multiprocessing
 import asyncio
-import concurrent.futures
 import functools
 from functools import wraps
 import inspect
-import time
 
 from collections import deque
 import numpy as np
 import math
 import copy
+import platform
 import warnings
 import datetime
 dt = datetime.datetime
@@ -33,6 +31,7 @@ from fons.errors import (
 logger,logger2,tlogger,tloggers,tlogger0 = _log.get_standard_5(__name__)
 
 LOGGING_LEVEL = 10
+_PLATFORM = platform.system()
 _TICKER_NAMES = set()
 _ROUTINE_NAMES = set()
 
@@ -163,9 +162,9 @@ class BaseTicker(metaclass=abc.ABCMeta):
         if self._inf['keepalive']:
             self.loop = wrap_trylog(self.loop,**self._inf['keepalive_params'])
             
-        self._hidden['closed'] = multiprocessing.Event() #threading.Event()
-        self._hidden['updated'] = multiprocessing.Event() #threading.Event()
-        self._hidden['lock'] = multiprocessing.Lock() #threading.Lock()
+        self._hidden['closed'] = multiprocessing.Event()
+        self._hidden['updated'] = multiprocessing.Event()
+        self._hidden['lock'] = multiprocessing.Lock()
         
         if name is None and hasattr(self.__class__,'_name'):
             name = self.__class__._name
@@ -301,6 +300,7 @@ class AsyncBaseTicker(BaseTicker):
         event = self._hidden['updated']
         lock = self._hidden['lock']
         loop = self._inf['event_loop']
+        is_windows = _PLATFORM == 'Windows'
         tlogger0.log(self.logging_level,'Sleeping on ticker {} (time: {})'.format(self.name,time))
         try:
             while True:
@@ -312,15 +312,27 @@ class AsyncBaseTicker(BaseTicker):
                         time = max(0, self.get_time_remaining())
                         event.clear()
                 
-                try: 
-                    await asyncio.wait_for(event.wait(), time, loop=loop)
+                if time is not None and time <= 0:
+                    break
+                
+                # Anything below 0.001 for non-windows and 0.016 for windows
+                # may not be slept to the end.
+                sleep_time = max(0.001, time)
+                if is_windows:
+                    sleep_time = max(0.016, time)
+                
+                try:
+                    await asyncio.wait_for(event.wait(), sleep_time, loop=loop)
                     event.clear()
-                    self._verify_is_open()  
+                    self._verify_is_open()
+                    # Event was set. Break out.
+                    if t0 != 'remaining':
+                        break
+                except asyncio.TimeoutError:
+                    # We can't break out of the loop yet, as asyncio.sleep isn't completely accurate
+                    pass
+                finally:
                     time = t0
-                    if time == 'remaining':
-                        continue
-                except concurrent.futures.TimeoutError: break
-                else: break
         finally:
             tlogger0.log(self.logging_level,'Sleep ended: {}'.format(self.name))
 

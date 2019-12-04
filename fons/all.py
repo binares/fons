@@ -6,7 +6,8 @@ from fons import (__version__, __author__)
 
 import fons.log as log
 from fons.log import (setup_logging, standard_logging, get_standard_5, 
-                      get_standard_logger, getFonsLogger, multi_module_logging)
+                      get_standard_logger, getFonsLogger, multi_module_logging,
+                      quick_logging)
 
 import fons.gui as gui
 from fons.gui import (TkThread, NbGUI)
