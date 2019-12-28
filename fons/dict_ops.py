@@ -69,14 +69,21 @@ def apply_until_get(objs, f, condition='is not None', **kw):
         return v
 
 
-def deep_get(objs, keywords, condition='is not None', **kw):
-    if isinstance(keywords,str): keywords = [keywords]
+def deep_get(objs, keywords, condition='is not None', errors=None, **kw):
+    if isinstance(keywords,str):
+        keywords = [keywords]
+    if errors not in (None, 'ignore', 'raise'):
+        raise ValueError(errors)
+    was_found = False
     notFound = object()
+    
     return_first = (condition == 'first')
     if return_first:
         condition = lambda x: x is not notFound
     
+    
     def recursive_get(obj, keywords=keywords):
+        nonlocal was_found
         keywords = iter(keywords)
         k = next(keywords)
         if obj is None:
@@ -84,11 +91,16 @@ def deep_get(objs, keywords, condition='is not None', **kw):
         try: v = obj[k]
         except KeyError:
             return None if not return_first else notFound
-        try: return recursive_get(v,keywords)
+        try: return recursive_get(v, keywords)
         except StopIteration:
+            was_found = True
             return v
-        
-    v = apply_until_get(objs,recursive_get,condition, **kw)
+    
+    v = apply_until_get(objs, recursive_get, condition, **kw)
+    
+    if not was_found and errors=='raise':
+        raise KeyError(keywords)
+    
     if v is notFound:
         return None
     return v
