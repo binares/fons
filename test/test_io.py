@@ -7,13 +7,13 @@ dt = datetime.datetime
 import fons.io as io
 
 fdir = os.path.dirname(__file__)
-PARAMS_PATH = fdir + '\\test_io_read_params.txt'
-PARAMS_SAVE_PATH = fdir + '\\test_io_read_params_out.txt'
-_SETTINGS_PATH = fdir + '\\test_io_update_settings.yaml'
-SETTINGS_PATH = fdir + '\\test_io_update_settings_COPY.yaml'
-_SETTINGS_TEST3_PATH = fdir + '\\test_io_update_settings_TEST3.yaml'
-SETTINGS_TEST3_PATH = fdir + '\\test_io_update_settings_TEST3_COPY.yaml'
-SETTINGS_NO_INDENT_PATH = fdir + '\\test_io_update_settings_no_indent.yaml'
+PARAMS_PATH = os.path.join(fdir, 'test_io_read_params.txt')
+PARAMS_SAVE_PATH = os.path.join(fdir, 'test_io_read_params_out.txt')
+_SETTINGS_PATH = os.path.join(fdir, 'test_io_update_settings.yaml')
+SETTINGS_PATH = os.path.join(fdir, 'test_io_update_settings_COPY.yaml')
+_SETTINGS_TEST3_PATH = os.path.join(fdir, 'test_io_update_settings_TEST3.yaml')
+SETTINGS_TEST3_PATH = os.path.join(fdir, 'test_io_update_settings_TEST3_COPY.yaml')
+SETTINGS_NO_INDENT_PATH = os.path.join(fdir, 'test_io_update_settings_no_indent.yaml')
 
 #Copy the files, for eGit purposes 
 #(if we don't copy and just overwrite the original, it thinks they've been updated)
@@ -143,7 +143,7 @@ def test_update_settings_modified_time():
                            verify=verify, deep=False, force_update=force_update)
         
     def _modify_file(path):
-        temp_path = os.path.dirname(path) + '\\io_temp'
+        temp_path = os.path.join(os.path.dirname(path), 'io_temp')
         with open(path) as f:
             with open(temp_path,'w') as f2:
                 f2.write(f.read())

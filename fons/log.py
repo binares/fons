@@ -1,22 +1,18 @@
 import datetime
 dt = datetime.datetime
 import time
-
 import sys,os,io
 from collections import namedtuple
 import traceback
-import inspect
-import functools
 import tkinter as tk
 import tkinter.scrolledtext as ScrolledText
+import threading
+import multiprocessing
 import warnings
+import yaml
 import logging
 from logging.handlers import (RotatingFileHandler, QueueHandler)
 OldLoggingFormatter = logging.Formatter
-
-import threading
-import multiprocessing
-
 
 
 class FonsLogger(logging.Logger):  
@@ -116,7 +112,60 @@ class EmptyLogger:
         pass
     def log(self, level, msg, *args, **kwargs):
         pass
-        
+
+
+SETTINGS_PATH = os.path.abspath(os.path.join(os.path.join(__file__, '..'), 'settings.yaml'))
+
+
+def _read_settings():
+    if os.path.exists(SETTINGS_PATH):
+        with open(SETTINGS_PATH, encoding='utf-8') as f:
+            return yaml.safe_load(f)
+    else:
+        return {}
+
+
+def _save_settings(d, mode='a'):
+    if mode not in ('a','w'):
+        raise ValueError(mode)
+    d_prev = {}
+    if mode == 'a':
+        d_prev = _read_settings()
+    d_prev.update(d)
+    with open(SETTINGS_PATH, 'w', encoding='utf-8') as f:
+        yaml.dump(d_prev, f)
+
+
+def _read_root_dir():
+    root_dir = ''
+    d = _read_settings()
+    if d.get('logging_default_root_dir') is not None:
+        root_dir = d['logging_default_root_dir']
+    if not isinstance(root_dir, str):
+        raise TypeError('Logging root dir in settings file must be of type <str>, got: {}'\
+                        .format(type(root_dir)))
+    return root_dir
+
+
+def set_default_root_dir(path, make_permanent=False):
+    """
+    Set the default directory where file handlers will output their files
+    (=='dir' param in functions 'standard_logging' and 'setup_logging').
+    :param make_permanent: 
+        if True, writes to settings file (will keep defaulting to that during
+        the future python instances)
+    """
+    global DEFAULT_ROOT_DIR
+    if not isinstance(path, str):
+        raise TypeError(type(path))
+    DEFAULT_ROOT_DIR = path
+    if make_permanent:
+        _save_settings({'logging_default_root_dir': path}, 'a')
+
+
+# '' will later resolve to current working directory
+DEFAULT_ROOT_DIR = _read_root_dir()
+
 logging._srcfile2 = os.path.normcase(FonsLogger.findCaller.__code__.co_filename)
 
 #For excluding this module from Logger's record (like logging module does)
@@ -132,10 +181,8 @@ logging.root = logging.RootLogger(logging.root.level)
 logging.root.handlers = _rhandlers
 logging.root.filters = _rfilters
 
-
 NR_CONSOLE_LINES = 300
 STREAMING_LOGGERS = ['L2','T2']
-DEFAULT_ROOT = 'C:\\PProjects\\PData\\_logs'
 
 _is_logger_overwritten = False
 _default_fmt = '%(asctime)s:%(levelname)s:%(name)s:%(module)s:%(funcName)s(%(lineno)d):%(message)s'
@@ -435,9 +482,12 @@ def standard_logging(dir=None, f_ending=None, TEST_MODE=False, modules=None, **k
     backup = sys.stdout
     if dir is None:
         dpath = kw.get('dpath')
-        if dpath is None: dir = DEFAULT_ROOT
-        else: dir = os.path.join(dpath,'logs','other')
-        if TEST_MODE: dir += '_TM'
+        if dpath is None:
+            dir = DEFAULT_ROOT_DIR
+        else:
+            dir = os.path.join(dpath,'logs','other')
+        if TEST_MODE:
+            dir += '_TM'
         os.makedirs(dir,exist_ok=True)
 
 

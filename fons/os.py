@@ -1,10 +1,12 @@
 import os
-import sys
 import re
 import tempfile
 import zipfile
+import platform
 
 import fons.log as _log
+
+_PLATFORM = platform.system()
 
 logger,logger2,tlogger,tloggers,tlogger0 = _log.get_standard_5(__name__)
 
@@ -154,14 +156,14 @@ def get_appdata_dir(appname, windows_select='Local', make=False):
     if windows_select not in ['Local','LocalLow','Roaming']:
         raise ValueError(windows_select)
     
-    if sys.platform == 'darwin':
+    if _PLATFORM == 'Darwin':
         from AppKit import NSSearchPathForDirectoriesInDomains
         # http://developer.apple.com/DOCUMENTATION/Cocoa/Reference/Foundation/Miscellaneous/Foundation_Functions/Reference/reference.html#//apple_ref/c/func/NSSearchPathForDirectoriesInDomains
         # NSApplicationSupportDirectory = 14
         # NSUserDomainMask = 1
         # True for expanding the tilde into a fully qualified path
         appdata = os.path.join(NSSearchPathForDirectoriesInDomains(14, 1, True)[0], appname)
-    elif sys.platform == 'win32':
+    elif _PLATFORM == 'Windows':
         local = os.path.normpath(os.environ['APPDATA']+'/../{}'.format(windows_select))
         appdata = os.path.join(local, appname)
     else:
@@ -252,13 +254,13 @@ def zip_contents(path, destination=None,
     
     def _zip_directory(pth):
         len_pth = len(pth)
-        len_split = len(pth.split('\\'))
+        len_split = len(os.sep)
                 
         pth2 = _rename(pth)
         basedir = os.path.basename(pth2)
         
         for root, dirs, files in os.walk(pth):
-            tail = root.split('\\')[len_split:]
+            tail = root.split(os.sep)[len_split:]
             if include_pycache: pass
             elif _contains_cache_dir(tail): continue
             else: files = _filter(files)
