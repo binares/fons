@@ -1,6 +1,6 @@
 import hmac
 import hashlib
-import secrets
+import os
 from base64 import urlsafe_b64encode as b64e, urlsafe_b64decode as b64d, b64encode
 from cryptography.fernet import Fernet
 from cryptography.hazmat.backends import default_backend
@@ -11,7 +11,7 @@ import string
 import time
 
 backend = default_backend()
-iterations = 100_000
+iterations = 100*1000
 
 ALPHA = string.ascii_lowercase
 DIGITS =  string.digits
@@ -85,7 +85,7 @@ def password_encrypt(message, password, iterations=iterations, encoding='utf-8')
     """
     if isinstance(message, str):
         message = message.encode(encoding)
-    salt = secrets.token_bytes(16)
+    salt = os.urandom(16)
     key = _derive_key(password.encode(), salt, iterations)
     return b64e(
         b'%b%b%b' % (

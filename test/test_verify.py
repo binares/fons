@@ -292,7 +292,12 @@ aTD0 = td(2)
 
 atps_tuples = [aTP,aTD,atp3,atp4,atp5,atp6,atp7]
 atps_lists = [list(x) for x in atps_tuples]
-atps_indexes = [pd.Index(x) for x in atps_tuples]
+atps_indexes = [pd.Index(x) for x in atps_tuples[:4]]
+try:
+    # This requires pandas>=0.25
+    atps_indexes += [pd.Index(x) for x in atps_tuples[4:]]
+except ValueError:
+    pass
 #(dt,None) -> (dt,NaT)
 #(td,None) -> (td,NaT)
 #(NaT,None) -> (NaT,None)

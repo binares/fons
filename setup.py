@@ -18,7 +18,7 @@ setup(
    packages=find_packages(exclude=['test']),
    python_requires='>=3.5',
    install_requires=[
-       'aiohttp>=3.0',
+       'aiohttp>=2.0',
        'requests>=2.0',
        'cryptography>=1.8',
        'filelock>=3.0',
