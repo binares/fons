@@ -315,11 +315,13 @@ class AsyncBaseTicker(BaseTicker):
                 if time is not None and time <= 0:
                     break
                 
-                # Anything below 0.001 for non-windows and 0.016 for windows
-                # may not be slept to the end.
-                sleep_time = max(0.001, time)
-                if is_windows:
-                    sleep_time = max(0.016, time)
+                sleep_time = time
+                if time is not None:
+                    # Anything below 0.001 for non-windows and 0.016 for windows
+                    # may not be slept to the end.
+                    sleep_time = max(0.001, time)
+                    if is_windows:
+                        sleep_time = max(0.016, time)
                 
                 try:
                     await asyncio.wait_for(event.wait(), sleep_time, loop=loop)
