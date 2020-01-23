@@ -25,7 +25,8 @@ import fons.reg as reg
 import fons.sched as sched
 import fons.threads as threads
 from fons.aio import (call_via_loop, call_via_loop_afut, wrap_with_future, lrc)
-from fons.event import (force_put, empty_queue, Station, QueueTransmitter, EventTransmitter)
+from fons.event import (force_put, empty_queue, Station, QueueTransmitter, EventTransmitter,
+                        Node, NodeHandler, RelayInfo, RelayPackage, NodeExit)
 from fons.host import Server
 from fons.processes import (LogiProcess, TkLogiProcess, pool_processes)
 from fons.reg import create_name

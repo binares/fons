@@ -3,16 +3,27 @@ import time
 import functools
 import queue as _queue
 from collections import defaultdict, namedtuple, Counter
+from concurrent.futures import Future
 
+from fons.aio import call_via_loop, call_via_loop_afut
+from fons.func import get_arg_count
 import fons.log as _log
 from fons.reg import create_name
 
 logger,logger2,tlogger,tloggers,tlogger0 = _log.get_standard_5(__name__)
 
+ROOT = 'temporary'
 _STATION_NAMES = set()
 _TRANSMITTER_NAMES = set()
+_NODE_NAMES = set()
 _empty = object()
 _qeitem = namedtuple('qe', 'queue event')
+_node_id = -1
+
+
+def set_root(value):
+    global ROOT
+    ROOT = value
 
 
 class Transmitter:
@@ -263,11 +274,13 @@ class Station:
     
     
     def remove(self, channel, id, loops=None):
+        """Does NOT raise error on non-existent"""
         loop_ids = self.get_loop_ids(loops)
         
         for loop_id in loop_ids:
             try: item = self.storage[loop_id].pop(id)
-            except KeyError: continue
+            except KeyError:
+                continue
             if item.queue is not None:
                 self.qtransmitters[channel] -= item.queue
             if item.event is not None:
@@ -350,7 +363,7 @@ class Station:
                 except StopIteration:
                     if not add:
                         raise ValueError('Not existing loop: {}'.format(x))
-                    id = self.add_loop(loop)
+                    id = self.add_loop(x)
             elif x in self.loops:
                 id = x
             else:
@@ -408,9 +421,501 @@ class Event:
     
     def __iter__(self):
         return iter((self.id, self.type, self.data, self.ts))
-      
+
+
+class RelayPackage:
+    __slots__ = ('data','source','handler','channel','current_handler')
+    
+    def __init__(self, data, source=None, handler=None, channel=None, current_handler=None):
+        """
+        :type source: Node
+        :type handler: Handler
+        :type current_handler: Handler
+        """
+        self.data = data
+        self.source = source
+        self.handler = handler
+        self.channel = channel
+        self.current_handler = current_handler
         
+    def copy(self, **kw):
         
+        return self.__class__(**dict({'data': self.data,
+                                      'source': self.source,
+                                      'handler': self.handler,
+                                      'channel': self.channel,
+                                      'current_handler': self.current_handler}, 
+                                     **kw))
+
+
+class RelayInfo:
+    __slots__ = ('items',)
+    
+    def __init__(self, items=[]):
+        self.items = list(items)
+        
+    def add_item(self, value, channels):
+        self.items.append((value, channels))
+        
+
+class NodeExit:
+    """Put this into node to signal it to stop listening"""
+    pass
+
+
+class Node:
+    def __init__(self, clients=[], handlers=[], groups=[], *, loop=None, root=None, name=None):
+        """
+        Node ids are negative, as are the station channels reserved for them individually.
+        Channels grouping multiple nodes together must be positive or non-int.
+        Handlers are functions that input the RelayPackage received by the ._queue,
+         output a value, which is then wrapped with RelayPackage and forwarded to
+         all channels associated with the handler.
+        Channel <0> contains all connected nodes, which is also the default channel of the root_handler.
+        :param root:
+            about .root_handler (which forwards the unadulterated data to all connected nodes)
+            ::None: defaults to ROOT ("temporary" by default)
+            ::True: root handler will be added on initiation
+            ::"temporary": -||-, but removed when .add_handler is called the first time
+                           (including in `handlers` argument)
+            ::"temp": == "temporary"
+            ::False: root handler will not be added
+        To start serving:
+            node.serve()
+        """
+        global _node_id
+        
+        if name is None:
+            name = abs(_node_id)
+            
+        self.id = _node_id
+        self.name = create_name(name, default=self.__class__.__name__, registry=_NODE_NAMES)
+        
+        _node_id -= 1
+        
+        # Initiate with channel 0
+        self.station = Station([{'channel': 0}])
+        self._queue = asyncio.Queue(loop=loop)
+        #self._user_queue = asyncio.Queue(maxlen=self.user_maxlen, loop=loop)
+        self.loop = self._queue._loop
+        self.futures = {'serve': None}
+        self.handlers = []
+        
+        # ie nodes that receive from (the handlers of) this node
+        self.clients_by_id = {}
+        # ie the channels that each client receives from
+        self.client_channels = {}
+        
+        self._last_handler_id = -1
+        if root is None:
+            root = ROOT
+        self._root = root
+        self._root_handler_overriden = False
+        # Root handler just forwards the received data to all connected nodes
+        # it will be removed as soon as the first handler is added
+        self.root_handler = NodeHandler(self, lambda x: x.data, [0], id='root')
+        
+        if root:
+            self.handlers.append(self.root_handler)
+        
+        for node_specs in clients:
+            kwargs = node_specs[1] if len(node_specs) > 1 else {}
+            self.connect(*node_specs[0],**kwargs)
+        
+        for group_specs in groups:
+            kwargs = group_specs[1] if len(group_specs) > 1 else {}
+            self.group(*group_specs[0],**kwargs)
+        
+        for handler_specs in handlers:
+            kwargs = handler_specs[1] if len(handler_specs) > 1 else {}
+            self.add_handler(*handler_specs[0],**kwargs)
+    
+    
+    def connect(self, node, *channels):
+        """Add recipient node"""
+        if not isinstance(node, Node):
+            raise TypeError("`node` must be of type Node, got: {}".format(type(node)))
+        if node.id in self.clients_by_id:
+            raise ValueError("Node <{}> has already been added".format(node.id))
+        
+        if node.id not in self.station.channels:
+            self.station.add_channel(node.id)
+        
+        self.clients_by_id[node.id] = node
+        self.station.add_queue(node.id, id=0, queue=node._queue)
+        self.station.add_queue(0, id=node.id, queue=node._queue)
+        
+        for channel in channels:
+            self.group(channel, node)
+        
+        self.client_channels[node.id] = set([node.id])
+    
+    
+    def disconnect(self, node):
+        """Deletes all traces of the node. The channels in handlers' lists remain,
+           but the channel itself just doesn't contain the node any more."""
+        if not isinstance(node, Node):
+            node = self.clients_by_id[node]
+        del self.clients_by_id[node.id]
+        # station.remove doesn't raise error on non-existent
+        self.station.remove(node.id, id=0)
+        self.station.remove(0, id=node.id)
+        client_channels = self.client_channels[node.id]
+        for channel in client_channels:
+            self.station.remove(channel, id=node.id)
+        del self.client_channels[node.id]
+    
+    
+    def group(self, channel, *nodes):
+        """Registers the given nodes under the channel"""
+        if isinstance(channel, int) and channel <= 0:
+            raise ValueError('Channel must be > 0, got: {}'.format(channel))
+        
+        if channel not in self.station.channels:
+            self.station.add_channel(channel)
+        
+        for node in nodes:
+            if not isinstance(node, Node):
+                node = self.clients_by_id[node]
+            self.station.add_queue(channel, id=node.id, queue=node._queue)
+            self.client_channels[node.id].add(channel)
+    
+    
+    def ungroup(self, channel, *nodes):
+        """Disassociates the given nodes from the channel""" 
+           
+        if isinstance(channel, int) and channel < 0:
+            raise ValueError('Channel must be >= 0, got: {}'.format(channel))
+        
+        for node in nodes:
+            if not isinstance(node, Node):
+                node = self.clients_by_id[node]
+            self.station.remove(channel, id=node.id)
+            self.client_channels[node.id].remove(channel)
+    
+    
+    def add_handler(self, f, *recipients, id=None, loop=None, type=None):
+        if loop is None:
+            loop = self.loop
+        if not isinstance(f, NodeHandler):
+            handler = NodeHandler(self, f, id=id, loop=loop, type=type)
+        else:
+            handler = f
+            if handler.node != self:
+                raise ValueError('Handler connected to wrong node.')
+        for rcp in recipients:
+            handler.add_recipient(rcp)
+        if not self._root_handler_overriden and self._root in ('temp','temporary'):
+            try: self.remove_handler(self.root_handler)
+            except ValueError: pass
+            self._root_handler_overriden = True
+        self.handlers.append(handler)
+        
+        return handler
+    
+    
+    def remove_handler(self, handler):
+        """:param handler: NodeHandler or its id"""
+        if not isinstance(handler, NodeHandler):
+            id = handler
+            handler = next((x for x in self.handlers if x.id == id), None)
+            if handler is None:
+                raise ValueError('No handler matching id: {}'.format(id))
+        self.handlers.remove(handler)
+    
+    
+    def has_client(self, node):
+        """:param node: Node or its id"""
+        node_id = node.id if isinstance(node, Node) else node
+        
+        return node_id in self.clients_by_id
+    
+    
+    def serve(self):
+        """Start listening and handling any received."""
+        if self.is_running():
+            return
+        self.futures['serve'] = \
+            call_via_loop_afut(self._serve, loop=self.loop)
+    
+    
+    async def _serve(self):
+        try:
+            while True:
+                inp = await self._queue.get()
+                if isinstance(inp, NodeExit):
+                    break
+                self.handle(inp)
+        finally:
+            for handler in self.handlers:
+                handler.stop()
+    
+    
+    def handle(self, inp):
+        for handler in self.handlers:
+            handler.handle(inp)
+    
+    
+    async def recv(self):
+        """Receive directly, skipping the handlers"""
+        if self.is_running():
+            raise RuntimeError('Cannot receive directly while node is running.')
+        
+        return await self._queue.get()
+    
+    
+    def recv_nowait(self):
+        return self._queue.get_nowait()
+    
+    
+    def relay(self, data, *channels):
+        """Relays directly, skipping the handlers"""
+        if not channels:
+            channels = [0]
+        pks = [RelayPackage(data, self, None, channel)
+               for channel in channels]
+        self.station.broadcast_multiple(
+            [{'channel': pk.channel, 'put': pk} for pk in pks])
+    
+    
+    def put(self, x, ensure_is_packed=True):
+        """
+        Put something into node's input queue
+        (if node is running it is immediately received by all its handlers).
+        :rtype: asyncio.Future
+        """
+        if ensure_is_packed and not isinstance(x, RelayPackage):
+            x = RelayPackage(x, None, None, None)
+        
+        return call_via_loop_afut(self._queue.put, (x,), loop=self._queue._loop)
+    
+    
+    def put_nowait(self, x, ensure_is_packed=True):
+        """:rtype: Future"""
+        if ensure_is_packed and not isinstance(x, RelayPackage):
+            x = RelayPackage(x, None, None, None)
+        
+        return put_via_loop(self._queue, x)
+    
+    
+    def empty(self):
+        return self._queue.empty()
+    
+    
+    def full(self):
+        return self._queue.full()
+    
+    
+    def is_running(self):
+        return self.futures['serve'] is not None \
+            and not self.futures['serve'].done()
+    
+    
+    def stop(self):
+        self.put(NodeExit())
+    
+    
+    def __repr__(self):
+        return '{}(id={},name={})'.format(self.__class__.__name__, self.id, self.name)
+
+
+class NodeHandler:
+    def __init__(self, node, target=None, recipients=[], *, loop=None, id=None, type=None):
+        """
+        :type node: Node
+        Handles the input received by its node.
+        :param type:
+            describes the `target`
+            ::None    - target is synchronous function
+                         - accepts the node input* as its first argument
+                         - returns output (which is then relayed by the handler)
+            ::"async" - a continuous "listener" coroutine function that
+                         - *may* accept `handler` (self) as its first argument
+                         - receives node input by awaiting on handler.recv(), 
+                         - relays the output data independently (handler.relay(data))
+                         - exits on NodeExit()
+            ::"gen"   - a function that returns generator
+                         - function *may* accept `handler` (self) as its first argument
+                        where the generator
+                         - receives node input via `yield` keyword
+                         - yields the output (which is then relayed by the handler)
+                         - exhausts on NodeExit()
+            * node input: The data received by node, which is assumed to be wrapped with RelayPackage,
+                          or will be (in .handle) if not already done so
+        """
+        self.node = node
+        if loop is None:
+            loop = node.loop
+        self._queue = asyncio.Queue(loop=loop)
+        self.loop = self._queue._loop
+        self.channels = []
+        
+        self.target = target
+        if type not in ('async','gen',None):
+            raise ValueError(type)
+        self._type = type
+        #if asyncio.iscoroutinefunction(target):
+        #    self._type = 'async'
+        
+        if id is None:
+            self.node._last_handler_id += 1
+            id = self.node._last_handler_id
+        else:
+            if any(x.id==id for x in self.node.handlers):
+                raise ValueError('A handler with id <{}> already exits'.format(id))
+            if isinstance(id, int):
+                self.node._last_handler_id = max(id, self.node._last_handler_id)
+                
+        self.id = id
+        self._started = False
+        
+        for rcp in recipients:
+            self.add_recipient(rcp)
+    
+    
+    def _start(self):
+        if self._started:
+            return
+        
+        args = (self,) if get_arg_count(self.target) else ()
+        
+        if self._type is None:
+            pass
+        elif self._type == 'gen':
+            self._gen = self.target(*args)
+            self._gen.send(None)
+        else:
+            call_via_loop(self.target, args, loop=self.loop)
+        self._started = True
+    
+    
+    def handle(self, x):
+        if not isinstance(x, RelayPackage):
+            x = RelayPackage(x, None, None, None, self)
+        else:
+            x = x.copy(current_handler=self)
+        
+        if self._type is None:
+            data = self.target(x)
+            self.relay(data)
+        elif self._type == 'gen':
+            # Generator
+            self._start()
+            data = self._gen.send(x)
+            self.relay(data)
+        else:
+            # Asynchronous
+            self._start()
+            self.put(x)
+    
+    
+    async def recv(self):
+        """This is only meant to be used in *asynchronous* target function of the handler"""
+        return await self._queue.get()
+    
+    
+    def recv_nowait(self):
+        return self._queue.get_nowait()
+    
+    
+    def relay(self, data):
+        """Relay the handler-processed data (wrapped with RelayPackage) to handler's nodes"""
+        if isinstance(data, RelayInfo):
+            return self._relay_by_info(data)
+        
+        # Also include the source node (self) and the associated channel
+        pks = [RelayPackage(data, self.node, self, channel)
+               for channel in self.channels]
+        self.node.station.broadcast_multiple(
+            [{'channel': pk.channel, 'put': pk} for pk in pks])
+    
+    
+    def _relay_by_info(self, info):
+        """:type info: RelayInfo"""
+        pks = []
+        
+        for data,to_channels in info.items:
+            for channel in to_channels:
+                pk = RelayPackage(data, self.node, self, channel)
+                pks.append(pk)
+                
+        self.node.station.broadcast_multiple(
+            [{'channel': pk.channel, 'put': pk} for pk in pks])
+    
+    
+    def add_recipient(self, channel, create=False):
+        """:param channel: channel or Node"""
+        node = None
+        if isinstance(channel, Node):
+            node = channel
+            channel = node.id
+            
+        if channel not in self.node.station.channels:
+            if not create:
+                raise ValueError("Channel <{}> hasn't been added yet".format(channel))
+            if node is not None:
+                self.node.connect(node)
+            else:
+                self.node.group(channel)
+        
+        if channel in self.channels:
+            raise ValueError("Channel <{}> already added to handler {}".format(channel, self.id))
+        
+        self.channels.append(channel)
+    
+    
+    def remove_recipient(self, channel):
+        if isinstance(channel, Node):
+            channel = channel.id
+        self.channels.remove(channel)
+    
+    
+    def put(self, x, ensure_is_packed=True):
+        """
+        Put something into handler's input queue 
+        (only received if the handler has asynchronous target)
+        :rtype: asyncio.Future
+        """
+        if ensure_is_packed and not isinstance(x, RelayPackage):
+            x = RelayPackage(x, None, None, None)
+        
+        return call_via_loop_afut(self._queue.put, (x,), loop=self._queue._loop)
+    
+    
+    def put_nowait(self, x, ensure_is_packed=True):
+        """:rtype: Future"""
+        if ensure_is_packed and not isinstance(x, RelayPackage):
+            x = RelayPackage(x, None, None, None)
+        
+        return put_via_loop(self._queue, x)
+    
+    
+    def empty(self):
+        return self._queue.empty()
+    
+    
+    def full(self):
+        return self._queue.full()
+    
+    
+    def is_running(self):
+        return self._started
+    
+     
+    def stop(self):
+        if not self._started:
+            return
+        if self._type is None:
+            pass
+        elif self._type == 'gen':
+            try: self._gen.send(NodeExit())
+            except StopIteration: pass
+        else:
+            self.put(NodeExit())
+        self._started = False
+
+
+
 def force_put(queue, item):
     nr_removed = 0
     while True:
@@ -437,3 +942,14 @@ def empty_queue(queue, return_items=False):
     except (_queue.Empty,asyncio.QueueEmpty):
         pass
     return received if return_items else nr_removed
+
+
+def put_via_loop(queue, x):
+    """Put something into queue"""
+    p = functools.partial(queue.put_nowait, x)
+    if asyncio.get_event_loop() is queue._loop:
+        f = Future()
+        f.set_result(p())
+        return f
+    else:
+        return call_via_loop(p, loop=queue._loop)
