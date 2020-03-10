@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import datetime as dt
 from dateutil.parser import parse as parsedate
-import dateutil
 import traceback
 import warnings
 import logging
@@ -35,8 +34,6 @@ _EXC_MAP = {VeriTypeError: TypeError,
 
 
 _EXC_ORD = [VeriError, VeriTypeError, VeriValueError, VeriKeyError, VeriIndexError]
-
-
 
 
 mappings  =  [[['pd.DataFrame','pandas.DataFrame','pandas.core.frame.DataFrame'],pd.DataFrame],
@@ -111,13 +108,15 @@ CONTAINERS = (dict, list, tuple, set, pd.Series, pd.DataFrame, pd.Index, np.ndar
 COPY_METHOD = (pd.DataFrame, pd.Series, pd.DatetimeIndex, pd.Index, np.ndarray)
 
 
-RESERVED = ('_type_', '_call_', '_value_', '_defval_', '_copy_', '_isnorm_', '_multi_')
+RESERVED = ('_type_', '_call_', '_value_', '_multival_', '_defval_', '_copy_', '_isnorm_', '_multi_')
 NORM_EXTRA = {'_type_':str,
               '_value_': '_keep_'}
 
-    
+
 def _map(item, *default, **kw):
-    if not isinstance(item,str):
+    if not isinstance(item, str):
+        if kw.get('pd_dtype'):
+            return _map_pd_dtype(item)
         return item
     
     obj = None
@@ -136,31 +135,43 @@ def _map(item, *default, **kw):
             raise BadInstruction('Item {} not known.'.format(item))
         else:
             return default[0]
-        
+    
     if kw.get('pd_dtype'):
-        try: obj = PD_STRING.get(obj,obj)
-        except TypeError:pass
-        
+        obj = _map_pd_dtype(obj)
+    
     #if isinstance(obj,str) and obj != 'datetime64[ns]': raise OSError(obj)
     
     return obj
-    
+
+
+def _map_pd_dtype(obj):
+    try:
+        obj = PD_STRING.get(obj, obj)
+    except TypeError:
+        pass
+    return obj
+
+
 def _isinstructions(x):
-    if not isinstance(x, dict):
+    if isinstance(x, Element):
+        return True
+    elif not isinstance(x, dict):
         return False
     elif not any(k in RESERVED for k in x.keys()):
         return False
     
     return True 
 
+
 def _isnorm(x):
-    if not isinstance(x,dict):
-        return False
-    elif not x.get('_isnorm_'):
-        return False
+    if isinstance(x, dict):
+        return bool(x.get('_isnorm_'))
+    elif isinstance(x, Element):
+        return bool(getattr(x, 'isnorm', False))
     
-    return True
-#----------------------------------------
+    return False
+
+#---------------------
 
 def normalize(data):
     init_data(data)
@@ -179,6 +190,10 @@ def init_data(x, copy=True):
     _type = type(x)
     _name = _type.__name__
     
+    if issubclass(_type, Element):
+        x = x.to_dict()
+        _type = dict
+    
     if issubclass(_type, dict):
         obj = _init_from_dict(x)
         if copy: obj = _copy(obj)
@@ -190,7 +205,7 @@ def init_data(x, copy=True):
     else:
         #isinstr = any(_isintruction(y) for y in x)
         #may still contain instructions at a sub-level
-        alist = [init_data(y,copy=copy) for y in x]
+        alist = [init_data(y, copy=copy) for y in x]
       
         try:
             call = _map(_name)
@@ -217,11 +232,11 @@ def _init_from_dict(D, copy=True):
         obj = init_data(v, copy=copy)
         add_to[n] = obj
         #keys are always? immutable, no need to copy
-              
+    
     return add_to 
-        
-        
-        
+
+
+
 def _init_instructions(D, copy=True):
     normalize_element(D)
     
@@ -320,8 +335,8 @@ def _known_types(_type_, D, copy=True):
     args = []
     kw = {}
     call = _type_
-
-
+    
+    
     if issubclass(_type_, (pd.Series, pd.DataFrame)):
         data = init_data(D.get('data'),copy=False)
         index = init_data(D.get('index'),copy=False)
@@ -330,39 +345,33 @@ def _known_types(_type_, D, copy=True):
         name = init_data(D.get('name'),copy=False)
         columns = init_data(D.get('columns'),copy=False)
         dtypes = D.get('dtypes')
-            
+        
         if _type_ is pd.DataFrame:
             if dtypes:
-                if not isinstance(dtypes,dict):
-                    dtypes = OD(init_data(dtypes,copy=False))
-                    D['dtypes'] = dtypes
-                    """if not D.get('_dtypes'):
-                    D['_dtypes'] = OD(k:{'_type_': type(v)} for k,v in dtypes.items())"""
-                    
                 if not isinstance(data,dict):
                     data = OD([[c,pd.Series(data, index=index, dtype=_map(d,None,pd_dtype=True))] for c,d in D['dtypes'].items()])
                 else:
                     data = OD([[c,pd.Series(data.get(c), index=index, dtype=_map(d,None,pd_dtype=True))] for c,d in D['dtypes'].items()])
             
-            if not columns:
-                D['columns'] = list(dtypes.keys())
-                
-            kw.update({'data':data,'index':index,'columns':columns,'dtype':dtype})
+                if not columns:
+                    D['columns'] = list(dtypes.keys())
             
+            kw.update({'data':data,'index':index,'columns':columns,'dtype':dtype})
+        
         else:
             kw.update({'data':data,'index':index,'name':name,'dtype':dtype})
-            
-            
+    
+    
     elif issubclass(_type_, dict):
         new_d = {}
         items = []
-
-        if D.get('items'):
+        
+        if is_not_null(D.get('items', nan)):
             items = D['items']
             if isinstance(items,dict):
                 items = list(items.items())
-            
-        elif D.get('keys'):
+        
+        elif is_not_null(D.get('keys', nan)):
             keys = D['keys']
             if 'values' in D:
                 values = D['values']
@@ -372,24 +381,8 @@ def _known_types(_type_, D, copy=True):
                 values = [D.get('unit')] * len(keys)
             
             items = list(zip(keys,values))
-            
-        elif D.get('dtypes'):
-            #only "overwrites" non-instructions:
-            default_dtype = D.get('default_dtype',None)
-            dtypes = D['dtypes']
-            if not isinstance(dtypes,dict):
-                dtypes = OD(dtypes)
-            for k,v in dtypes.items():
-                if not _isinstructions(v):
-                    d = {'_type_': _map(v)}
-                    normalize_element(d, default=default_dtype)
-                else: 
-                    d = v#normalize_element(v) #don't use default=v, inf recursion
-                
-                items.append([k,d])
-                
-            
-        new_d = init_data(items,copy=copy)
+        
+        new_d = init_data(items, copy=copy)
         args.append(new_d)
         
         if True:
@@ -398,8 +391,8 @@ def _known_types(_type_, D, copy=True):
             items = [[itm[0],normalize_element(itm[1])] for itm in items]
             D['items'] = items #the instr dicts in items have been normalized due to init_data(items)
             init_data(D.get('unit'), copy=False) #??
-
-        
+    
+    
     elif issubclass(_type_, dt.datetime):
         value = D.get('value', D.get('v'))
         
@@ -411,21 +404,21 @@ def _known_types(_type_, D, copy=True):
                 args.append(D['format'])
             else:
                 call = parsedate
-            
+        
         elif isinstance(value, dt.datetime):
             args.extend([value.year, value.month, value.day, value.hour,
                          value.minute, value.second, value.microsecond])
         
         elif isinstance(value,(list,tuple)):
             args.extend(value)
-            
+        
         elif isinstance(value,(int,float)):
             call = dt.datetime.utcfromtimestamp
             args.append(value/1000)
-            
+        
         else:
             raise BadInstruction(_type_, D, value)
-            
+    
     
     elif issubclass(_type_, dt.timedelta):
         value = D.get('value', D.get('v'))
@@ -439,8 +432,8 @@ def _known_types(_type_, D, copy=True):
             
         else:
             raise BadInstruction(_type_, D, value)  
-            
-            
+    
+    
     elif issubclass(_type_, (list,tuple,set)):
         value = D.get('value', D.get('values', D.get('v', nan)))
         _range = D.get('range', nan)
@@ -459,22 +452,22 @@ def _known_types(_type_, D, copy=True):
             
             if not is_given(value):
                 D['value'] = arange
-                
+            
             init_data(D.get('unit'), copy=False) #??
-        
-                 
+    
+    
     elif issubclass(_type_, (str,int,float)):
         value = D.get('value', D.get('v'))
         if is_not_null(value):
             args.append(init_data(value))
             D['_value_'] = args[-1]
             #del D['value']
-            
+    
     else: 
         pass #args.append(init_data(_type_))
-            
+    
     #print('args_now:',args)    
-            
+    
     return args, kw, call
 
 
@@ -488,7 +481,12 @@ def normalize_element(x, default=nan):
     # _defval_, _value_, value, unit, 
     #_call_  :: return _value_/_multival,_defval_ if those present; 
     #            otherwise if _call_ in (None, _nan_ ): return None, else _call_(args), 
-    #                and if not given _call_ = _type_. or return None if not is_not_null(_type_) 
+    #                and if not given _call_ = _type_. or return None if not is_not_null(_type_)
+    
+    x_initial = x
+    is_element = isinstance(x, Element)
+    if is_element:
+        x = x.to_dict()
     
     if _isinstructions(x):
         d = x
@@ -510,6 +508,8 @@ def normalize_element(x, default=nan):
     
     _normalize_unit(d)
     
+    _normalize_dtypes(d)
+    
     _type_ = d.get('_type_',nan)
     if is_given(_type_):
         if isinstance(_type_, tuple):
@@ -517,10 +517,12 @@ def normalize_element(x, default=nan):
         
         if not issubclass(_type_, (dt.datetime, dt.timedelta)):
             _known_types(_type_, d, copy=False)
-
-        
+    
     d['_isnorm_'] = True
-                
+    
+    if is_element:
+        x_initial.update(d, normalize=False)
+        return x_initial
     
     return d
 
@@ -537,22 +539,22 @@ def _normalize_type(d):
     else:
         _type_ = _map(_type_)
     
-    if isinstance(_type_,tuple):
+    if isinstance(_type_, tuple):
         for t in _type_:
             _verify_is_type(t)
     else:
         _verify_is_type(_type_)
     
     d['_type_'] = _type_
-        
- 
+
+
 def _normalize_defval(d, default):
     if default is not nan:
         d['_defval_'] = normalize_element(default)
     elif '_defval_' in d:
         d['_defval_'] = normalize_element(d['_defval_'])
-        
-        
+
+
 def _normalize_multi(d):
     _multi_ = d.get('_multi_',nan)
     if not is_not_null(_multi_): 
@@ -567,8 +569,8 @@ def _normalize_multi(d):
             del d['_multi_']
     else:
         raise BadInstruction('Defective "_multi_": {}'.format(_multi_))
-    
-    
+
+
 def _normalize_value(d):
     if _isinstructions(d.get('_value_')):
         d['_value_'] = init_data(d['_value_'], copy=False)
@@ -623,8 +625,8 @@ def _normalize_value(d):
         
         if types:
             d['_type_'] = types if len(types) > 1 else types[0]
-        
-        
+
+
 def _map_value_if_str(_type_, _value_):
     if is_null(_type_):
         return _value_
@@ -635,14 +637,14 @@ def _map_value_if_str(_type_, _value_):
         return _map(_value_)
     else:
         return _value_
-        
+
 
 def _normalize_call(d):
     if '_call_' not in d: pass
     elif is_not_null(d['_call_']): #??
         d['_call_'] = _map(d['_call_'])
-        
-        
+
+
 def _normalize_size(d):
     size = d.get('size',nan)
     if is_null(size):
@@ -672,13 +674,56 @@ def _normalize_range(d):
         raise BadInstruction('Wrong size for "range": {}'.format(len(range)))
     elif not isinstance(range[0],int) or not isinstance(range[1],int):
         raise BadInstruction('"range" contains non-int type: {}'.format([type(y) for y in range]))
-    
-    
+
+
 def _normalize_unit(d):
     if 'unit' in d:
         d['unit'] = normalize_element(d['unit'])
         init_data(d['unit'], copy=False)
+
+
+def _normalize_dtypes(d):
+    dtypes = d.get('dtypes', nan)
+    if is_null(dtypes):
+        if 'dtypes' in d:
+            del d['dtypes']
+        return
+    if is_null(d.get('_type_', nan)):
+        raise BadInstruction('_type_ must be given if "dtypes" is defined; d: {}'.format(d))
+    _type = _map(d['_type_'])
+    if not isinstance(_type, tuple):
+        _type = (_type,)
+    for_dict = any(issubclass(x, dict) for x in _type)
+    for_pandas = any(issubclass(x, (pd.Series, pd.DataFrame)) for x in _type)
+    items = []
+    default_dtype = d.get('default_dtype', None)
+    
+    if not isinstance(dtypes,dict):
+        d['dtypes'] = dtypes = OD(dtypes)
+    
+    for k,v in dtypes.items():
+        if not _isinstructions(v):
+            dd = {'_type_': _map(v, pd_dtype=for_pandas)}
+            normalize_element(dd, default=default_dtype)
+        else: 
+            dd = v #normalize_element(v) #don't use default=v, inf recursion
         
+        if for_pandas:
+            if isinstance(dd, Element):
+                dd = dd.to_dict()
+            _type_ = dd.get('_type_')
+            _type_mapped = _map(_type_, pd_dtype=True)
+            if is_null(_type_) or not isinstance(_type_mapped, (type, str)):
+                raise BadInstruction('Pandas dtype _type_ is invalid: /k: v/: {}: {} || type(v): {}'.format(k, v, type(v)))
+            dtypes[k] = _type_mapped
+        
+        if for_dict:
+            items.append([k, dd])
+    
+    if for_dict and is_null(d.get('items',nan)):
+        d['items'] = items
+
+
 #-------------------------------------
 #type - error/warn/ignore/fix/fix+
 #value - error/warn/ignore/fix/fix+
@@ -729,6 +774,9 @@ def verify_data(x, norm, mode='error', copy=False, **kw):
     if not _isnorm(norm):
         norm = normalize_element(norm)
         init_data(norm, copy=False)
+    
+    if isinstance(norm, Element):
+        norm = norm.to_dict()
     
     kw.update({'mode': mode})#, 'copy': copy})
     norm_extra = kw.get('norm_extra', nan)
@@ -1051,7 +1099,7 @@ def _verify_listlike(x, norm, mode, trace, handler, copy=False):
     if is_not_null(new): #and any(m in _FIX_MODES for m in handler.values()):
         #deepcopy norm_new?
         norm_new = {k: norm[k] for k in norm if k not in ('_copy_',)}
-        norm_new.update({'value':new}) #,'_value_':None})
+        norm_new.update({'values': new}) #,'_value_':None})
         x = init_data(norm_new)
     
     return x
@@ -1472,6 +1520,253 @@ def fill_missing(x, norm, warn=True):
 
 #......................................
 
+def _resolve(x, as_type=False):
+    if _isinstructions(x):
+        return x
+    if as_type:
+        e = None
+        try: 
+            d = {'_type_': x}
+            _normalize_type(d)
+            if '_type_' in d:
+                return d
+            e = BadInstruction('Does not resolve to type: {}'.format(x))
+        except BadInstruction as exc:
+            e = exc
+        if e and as_type!='try':
+            raise e
+    return {'_value_': x}
 
 
+class Element:
+    __aliases = {
+        'type': ['_type_', 'type'],
+        'value': ['_value_', 'value'],
+        'multival': ['_multival_', 'multival'],
+        'defval': ['_defval_', 'defval'],
+        'unit': ['unit'],
+        'dtypes': ['dtypes'],
+        'default_dtype': ['default_dtype'],
+        'call': ['_call_', 'call'],
+        'keys': ['keys'],
+        'values': ['values', 'v'],
+        'items': ['items'],
+        'multi': ['_multi_','multi'],
+        'isnorm': ['_isnorm_','isnorm'],
+    }
+    
+    def __init__(self, *type, **kw):
+        self.verify_params(type, kw)
+        if len(type):
+            self.type = type[0] if len(type) == 1 else type
+        
+        self.update(kw)
+    
+    
+    def __call__(self, copy=True):
+        return init_data(self, copy=copy)
+    
+    
+    def verify(self, x, mode='error', copy=False, **kw):
+        return verify_data(x, self, mode, copy, **kw)
+    
+    
+    def to_dict(self, **kw):
+        if hasattr(self, '__dict') and not kw:
+            return self.__dict
+        d = {}
+        #copy_attrs = ['unit','dtypes']
+        
+        for attr, aliases in self._Element__aliases.items():
+            alias = aliases[0]
+            if hasattr(self, attr):
+                value = getattr(self, attr)
+                #if attr in copy_attrs:
+                #    value = value.copy()
+                d[alias] = value
+        
+        d.update(self.__kw)
+        self.__dict = d
+        
+        if kw:
+            d = dict(d, **kw)
+        
+        return d
+    
+    
+    def update(self, d, normalize=True):
+        resolve_attrs = ['unit']
+        resolve_elements = ['dtypes','multi']
+        found = []
+        
+        for attr, aliases in self._Element__aliases.items():
+            for alias in aliases:
+                if alias in d:
+                    value = d[alias]
+                    if attr in resolve_attrs:
+                        value = _resolve(value)
+                    if attr in resolve_elements:
+                        if isinstance(value, dict):
+                            value = {k: _resolve(v, 'try') for k,v in value.items()}
+                        else:
+                            value = [_resolve(v) for v in value]
+                    setattr(self, attr, value)
+                    found.append(alias)
+        
+        self.__kw = {k: v for k,v in d.items() if k not in found}
+        
+        if hasattr(self, '__dict'):
+            del self.__dict
+        
+        if normalize:
+            if hasattr(self, 'isnorm'):
+                del self.isnorm
+            normalize_element(self)
+        else:
+            self.to_dict()
+    
+    
+    def get(self, key, *default):
+        return self.__dict.get(key, *default)
+    
+    
+    def __contains__(self, key):
+        return key in self.__dict
+    
+    
+    def __len__(self):
+        ignore = {'_copy_','_isnorm_'}
+        return sum(1 for x in self.__dict if x not in ignore)
+    
+    
+    @classmethod
+    def verify_params(cls, type, kw):
+        must_contain_attr = '_{}__must_contain'.format(cls.__name__)
+        if hasattr(cls, must_contain_attr):
+            must_contain = getattr(cls, must_contain_attr)
+            for attr in must_contain:
+                aliases = cls._Element__aliases[attr]
+                if not any(x in kw for x in aliases):
+                    raise BadInstruction('Does not contain: {}'.format(attr))
 
+
+class Container(Element):
+    
+    def __getitem__(self, key):
+        if not isinstance(key, tuple):
+            key = (key,)
+        
+        d = self.to_dict()
+        unit = d.get('unit', {})
+        
+        if len(key) == 1:
+            unit.update(_resolve(key[0], 'try'))
+        elif len(key) > 1:
+            resolved = [_resolve(k, 'try') for k in key]
+            types_only, values_only, other = [], [], []
+            for x in resolved:
+                if len(x) == 1 and '_type_' in x:
+                    if isinstance(x.get('_type_'), tuple):
+                        types_only += list(x.get('_type_'))
+                    else:
+                        types_only.append(x.get('_type_'))
+                elif len(x) == 1 and '_value_' in x:
+                    values_only.append(x.get('_value_'))
+                elif len(x) == 1 and '_multival_' in x:
+                    values_only += list(x.get('_multival_'))
+                else:
+                    other.append(x)
+            
+            _type = {'_type_': tuple(types_only) if len(types_only) > 1 else types_only[0]} if len(types_only) else {}
+            _value = ({'_multival_': values_only} if len(values_only)> 1 else {'_value_': values_only[0]}) if values_only else {}
+            if _type and (not _value and not other):
+                unit.update(_type)
+            elif _value and (not _type and not other):
+                unit.update(_value)
+            else:
+                multi = []
+                if _type:
+                    multi.append(_type)
+                if _value:
+                    multi.append(_value)
+                if other:
+                    multi += other
+                unit['_multi_'] = multi
+        
+        if 'unit' in d or unit:
+            d['unit'] = unit
+        
+        return Container(**d)
+    
+    
+    def __iter__(self):
+        raise TypeError("'Container' object is not iterable.")
+
+
+class Multi(Element):
+    def __init__(self, *elements, **kw):
+        if not elements:
+            raise BadInstruction('No elements provided')
+        if 'multi' not in 'kw':
+            kw['multi'] = elements
+        super().__init__(**kw)
+
+
+class Type(Element):
+    __must_contain = ['type']
+    
+    def __init__(self, *type, **kw):
+        if not type:
+            raise BadInstruction('type not provided')
+        if 'type' not in kw:
+            kw['type'] = type
+        super().__init__(**kw)
+
+
+class Value(Element):
+    __must_contain = ['value']
+    
+    def __init__(self, value, **kw):
+        if 'value' not in kw:
+            kw['value'] = value
+        super().__init__(**kw)
+
+
+class MultiVal(Element):
+    __must_contain = ['multival']
+    
+    def __init__(self, *values, **kw):
+        if 'multival' not in kw:
+            kw['multival'] = list(values)
+        super().__init__(**kw)
+
+
+class Dtyct(Container):
+    __must_contain = ['dtypes']
+    
+    def __init__(self, dtypes, **kw):
+        if 'dtypes' not in kw:
+            kw['dtypes'] = dtypes
+        super().__init__(dict, **kw)
+    
+    @classmethod
+    def from_dtypes(cls, *kw, **dtypes):
+        kw = kw[0] if kw else {}
+        return cls(dtypes, **kw)
+
+
+Str = Element(str)
+Int = Element(int)
+Float = Element(float)
+Bool = Element(bool)
+Null = Element(type(None))
+List = Container(list)
+Dict = Container(dict)
+NullDict = Container(dict, unit={'_defval_': None}, default_dtype=None)
+Set = Container(set)
+
+
+__all__ = ['Str','Int','Float','Bool','Null','List','Dict','Dtyct','NullDict',
+           'Set','Multi','Type','Value','MultiVal','Element','Container',
+           'normalize_element','normalize','init_data',
+           'verify_data','convert_exception','fill_missing']

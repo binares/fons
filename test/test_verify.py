@@ -11,7 +11,10 @@ import traceback
 import pytest
 
 import fons.verify as vfy
-
+from fons.verify import (
+    Element, Container, Multi, Value, MultiVal, Type, Int, Float, Bool, Str, Null,
+    Set, List, Dict, NullDict, Dtyct,
+)
 
 
 DNFO = {'tch': {'_type_': pd.DataFrame,
@@ -432,3 +435,83 @@ def test__verify_input_args(kwargs, expected):
     assert handler['type'] == expected[0]
     assert key['missing'] == expected[1]
     assert key['extra'] == expected[2]
+
+
+#------------------
+
+def _verify(element, x, raises):
+    if not raises:
+        element.verify(x)
+    else:
+        with pytest.raises(raises):
+            element.verify(x)
+
+
+multi_inp = [
+    [2, None],
+    [2.0, vfy.VeriTypeError],
+    [(258,), vfy.VeriValueError],
+    [(259,), None],
+    ['22', None],
+]
+
+@pytest.mark.parametrize("x,raises", multi_inp)
+def test_elements_multi(x, raises):
+    multi = Multi(Str, Int, {'_value_': (259,)})
+    _verify(multi, x, raises)
+
+ 
+dict_inp = [
+    ['wrongtype', vfy.VeriTypeError],
+    [{'a': 8.2}, None],
+    [{'x': None}, vfy.VeriTypeError],
+    [{'x': 'b'}, vfy.VeriValueError],
+    [{'x': 'a'}, None],
+    [{'x': 'a', 'n': (17,)}, None],
+    [{'x': 'a', 'n': (18,)}, vfy.VeriValueError],
+    [{'x': 'a', 'n': [17]}, None],
+    [{'x': 7}, None],
+]
+ 
+@pytest.mark.parametrize("x,raises", dict_inp)
+def test_elements_dict(x, raises):
+    dict_ = Dict[float, list, MultiVal((17,), 'a')]
+    #print(dict_.to_dict())
+    #print(MultiVal((17,)).to_dict())
+    _verify(dict_, x, raises)
+
+
+list_inp = [
+    ((258,), vfy.VeriTypeError),
+    (None, vfy.VeriTypeError),
+    ([None], vfy.VeriTypeError),
+    ([2.0], vfy.VeriTypeError),
+    ([(258,)], vfy.VeriTypeError),
+    ([[258]], vfy.VeriValueError),
+    (['12'], None),
+    ([[39]], None),
+    ([40], None),
+    ([pd.DataFrame()], None),
+    ([{'a': 0}], None),
+    ([pd.DataFrame()], None),
+]
+
+@pytest.mark.parametrize("x,raises", list_inp)
+def test_elements_list(x, raises):
+    list_ = List[MultiVal(3, '12'), {'_value_': [39]}, Value(40), dict, Type(pd.DataFrame)]
+    #print(list_.to_dict())
+    #print(MultiVal(3, '12').to_dict())
+    _verify(list_, x, raises)
+    
+
+def test_NullDict():
+    nd = NullDict[str]
+    nd.verify({'a': None, 'b': 'X'})
+
+
+def test_elements___call__():
+    dtyct_ = Dtyct({'a': float, 'b': Type(str)}, defval={'a': 2, 'b': 'B'})
+    d = dtyct_()
+    assert d == {'a': 2, 'b': 'B'}
+    d['b'] = 'X'
+    dtyct_.verify(d)
