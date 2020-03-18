@@ -15,7 +15,7 @@ def find_all_paths(graph, start, end, path=[], max_len=None, *, _l=None):
     if _l is None: _l = len(path)
     path = path + [start]
     _l += 1
-    if max_len is not None and _l >= max_len:
+    if max_len is not None and _l > max_len:
         return []
     if start == end:
         return [path]
