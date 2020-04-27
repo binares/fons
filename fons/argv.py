@@ -30,6 +30,9 @@ class Argv:
             is_unique = True
             add_i = 0
             
+            if x.startswith('--'):
+                x = x[2:]
+            
             if x.startswith('-'):
                 var = x[1:]
                 try: value = argv[i+1]
@@ -250,7 +253,11 @@ class Argv:
     @property
     def mapped(self):
         return self.map
-    
+
 
 def parse_argv(argv, apply={}):
     return Argv(argv, apply)
+
+
+def is_positional(x):
+    return not x.startswith('-') and ('=') not in x
