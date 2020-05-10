@@ -373,6 +373,35 @@ def test_verify_data6():
         vfy.verify_data((aTP0,),TP_OUT)
 
 
+
+test_verify_range_input = [
+    [2, {'_type_': float, 'range': '[0,2'}, vfy.BadInstruction],
+    [2, {'_type_': float, 'range': '[2]'}, vfy.BadInstruction],
+    [2, {'_type_': float, 'range': '[10,2]'}, vfy.BadInstruction],
+    [2, {'_type_': float, 'range': '[0,3.5]'}, None],
+    [2, {'_type_': float, 'range': '[0,2]'}, None],
+    [2, {'_type_': float, 'range': '[2,2.0]'}, None],
+    [2, {'_type_': float, 'range': '[2,2.0)'}, vfy.VeriValueError],
+    [29, {'_type_': float, 'range': '[2,]'}, None],
+    [-1, {'_type_': float, 'range': '[2,]'}, vfy.VeriValueError],
+    [-1.2, {'_type_': float, 'range': '(-3,-1)'}, None],
+    [-1.2, {'_type_': float, 'range': '(-3,-1.2)'}, vfy.VeriValueError],
+    [-1.2, {'_type_': int, 'range': '(-3,-1.2)'}, vfy.VeriTypeError],
+    [-1, vfy.IntRange('(-3,0)'), None],
+    [-1.2, vfy.IntRange('(-3,-1.2)'), vfy.VeriTypeError],
+    [-1.2, vfy.FloatRange('(-3,-1.2]'), None],
+    [-1.2, vfy.FloatRange('(-3,-1.2)'), vfy.VeriValueError],
+]
+
+@pytest.mark.parametrize("x,norm,raises", test_verify_range_input)
+def test_verify_range(x, norm, raises):
+    if raises:
+        with pytest.raises(raises):
+            vfy.verify_data(x, norm)
+    else:
+        vfy.verify_data(x, norm)
+
+
 #------------------
 #Tests for some new special cases:
 def test_special():

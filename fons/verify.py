@@ -443,8 +443,8 @@ def _known_types(_type_, D, copy=True):
             args.append(init_data(value, copy=copy))
             """if is_null(size):
                 D['size'] = {'==': (len(value),)}"""
-            
-        elif is_not_null(_range):
+        
+        elif is_not_null(_range) and not isinstance(_range, str):
             arange = list(range(*_range)) #np.arange(*range)
             args.append(arange)
             """if not is_not_null(size):
@@ -462,6 +462,14 @@ def _known_types(_type_, D, copy=True):
             args.append(init_data(value))
             D['_value_'] = args[-1]
             #del D['value']
+        elif issubclass(_type_, (int, float)) and isinstance(D.get('range'), str):
+            limit0, limit1 = D['_range']
+            if None not in D['_range']:
+                args.append((limit0 + limit1) / 2)
+            elif limit0 is not None:
+                args.append(limit0)
+            elif limit1 is not None:
+                args.append(limit1)
     
     else: 
         pass #args.append(init_data(_type_))
@@ -557,7 +565,7 @@ def _normalize_defval(d, default):
 
 def _normalize_multi(d):
     _multi_ = d.get('_multi_',nan)
-    if not is_not_null(_multi_): 
+    if is_null(_multi_): 
         d.pop('_multi_', -1)
     elif isinstance(_multi_, MAP['listlike']):
         if len(_multi_):
@@ -662,10 +670,30 @@ def _normalize_size(d):
                     arg, type(value)))
 
 
+def _parse_number(x):
+    if not x or x=='null':
+        return None
+    try: 
+        return float(x)
+    except ValueError:
+        return '?'
+
+
 def _normalize_range(d):
     range = d.get('range',nan)
-    if not is_not_null(range):
+    if is_null(range):
         d.pop('range',-1)
+    # range for verifying int/float
+    elif isinstance(range,str):
+        first, middle, last = range[:1], range[1:-1], range[-1:]
+        _range = tuple(_parse_number(x.strip()) for x in middle.split(','))
+        correct = '?' not in _range
+        all_num = all(isinstance(x, float) for x in _range)
+        if not range or first not in '[(' or last not in '])' or len(_range)!=2 or not correct \
+                or all_num and _range[0]>_range[1]:
+            raise BadInstruction('Not understood scalar "range": {}'.format(range))
+        d['_range'] = _range
+    # range for list/tuple/set initiation
     elif isinstance(range,int):
         d['range'] = (0,range)
     elif not isinstance(range, MAP['listlike']):
@@ -825,7 +853,7 @@ def verify_data(x, norm, mode='error', copy=False, **kw):
     else:
         x_ver = x
     
-    passed = pd.Series(False, ['type','value'])
+    passed = pd.Series(True, ['type','value','range'])
     
     
     #-type-
@@ -833,39 +861,41 @@ def verify_data(x, norm, mode='error', copy=False, **kw):
     
     if is_not_null(normtype):
         r = _verify_type(_type, normtype, sub_allowed)
-        if r is True: 
-            passed.type = True
-        else:
+        if r is not True: 
             _handle_error(handler, 'type', [trace2, t_name, r])
-    else: 
-        passed.type = True
-        
-        
+            passed.type = False
+    
+    
     #-value-
     has_value = '_value_' in norm
     _multival_ = norm.get('_multival_', nan)
     
-    if has_value and not passed.value:
+    if has_value:
         _value_ = norm.get('_value_')
         passed.value = compare(x_ver, _value_, type_op='ignore')
         if not passed.value:
             _handle_error(handler, 'value', [trace2, x_ver, _value_])
-        
-            
-    elif is_not_null(_multival_) and not passed.value:
+    
+    elif is_not_null(_multival_):
         passed.value = any(compare(x_ver, val, type_op='ignore') for val in _multival_)
         if not passed.value:
             _handle_error(handler, 'value', [trace2, x_ver, _multival_])
-        
-        
-    elif not passed.value:
+    
+    else:
         try: iter(x_ver)
         except TypeError: pass
         else: 
             x_ver = _verify_elements(x_ver, norm, mode, trace2, handler, copy)
-            passed.value = True
-            
-        
+    
+    
+    #-range-
+    range = norm.get('range')
+    if isinstance(x_ver, (int, float)) and is_not_null(range) and isinstance(range, str):
+        passed.range = _verify_in_range(x_ver, norm)
+        if not passed.range:
+            _handle_error(handler, 'value', [trace2, x_ver, 'in range: {}'.format(range)])
+    
+    
     if not passed.all():
         x_ver = init_data(norm)
         
@@ -920,8 +950,24 @@ def _verify_multi(x, _multi_, mode, trace, handler, copy=False):
         #raise VeriError('Verification failed. The following exceptions occurred: {}'.format(exceptions))
         
     return x_ver
-        
-        
+
+
+def _verify_in_range(x, norm):
+    range = norm['range']
+    limit0, limit1 = norm['_range']
+    
+    if limit0 is not None:
+        result0 = limit0 <= x if range[0]=='[' else limit0 < x
+        if not result0:
+            return False
+    
+    if limit1 is not None: 
+        result1 = x <= limit1 if range[-1]==']' else x < limit1
+        if not result1:
+            return False
+    
+    return True
+
 #-------------------------------------------------------------
     
 def _verify_elements(x, norm, mode, trace, handler, copy=False):
@@ -1755,6 +1801,20 @@ class Dtyct(Container):
         return cls(dtypes, **kw)
 
 
+class IntRange(Element):
+    def __init__(self, range, **kw):
+        if 'range' not in kw:
+            kw['range'] = range
+        super().__init__(int, **kw)
+
+
+class FloatRange(Element):
+    def __init__(self, range, **kw):
+        if 'range' not in kw:
+            kw['range'] = range
+        super().__init__(float, **kw)
+
+
 Str = Element(str)
 Int = Element(int)
 Float = Element(float)
@@ -1768,5 +1828,5 @@ Set = Container(set)
 
 __all__ = ['Str','Int','Float','Bool','Null','List','Dict','Dtyct','NullDict',
            'Set','Multi','Type','Value','MultiVal','Element','Container',
-           'normalize_element','normalize','init_data',
+           'IntRange','FloatRange','normalize_element','normalize','init_data',
            'verify_data','convert_exception','fill_missing']
