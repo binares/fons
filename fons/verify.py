@@ -517,6 +517,7 @@ def normalize_element(x, default=nan):
     _normalize_unit(d)
     
     _normalize_dtypes(d)
+    _normalize_opt_req(d)
     
     _type_ = d.get('_type_',nan)
     if is_given(_type_):
@@ -751,6 +752,28 @@ def _normalize_dtypes(d):
     if for_dict and is_null(d.get('items',nan)):
         d['items'] = items
 
+
+def _normalize_opt_req(d):
+    # all keys that aren't in required (if given) are optional
+    # use 'required' if nearly all keys are optional
+    aliases = {
+        'optional': ['opt','optional','keys_optional'],
+        'required': ['req','required','keys_required'],
+    }
+    for key, aliases in aliases.items():
+        final = nan
+        for alias in aliases:
+            value = d.pop(alias, nan)
+            if is_null(value):
+                pass
+            elif not isinstance(value, MAP['listlike']+(dict,)):
+                raise BadInstruction('Wrong type for "{}": {}'.format(alias, type(value)))
+            elif final is not nan:
+                raise BadInstruction('Got multiple values for {}'.format(key))
+            else:
+                final = value
+        if is_not_null(final):
+            d[key] = final
 
 #-------------------------------------
 #type - error/warn/ignore/fix/fix+
@@ -992,13 +1015,14 @@ def _verify_dict(x, norm, mode, trace, handler, copy=False):
     
     unit = norm.get('unit',nan)
     extra_allowed = norm.get('extra_allowed')
-    keys_opt = norm.get('keys_optional',[])
+    keys_opt = norm.get('optional',[])
+    keys_req = norm.get('required',nan)
     
     nitems = norm.get('items')
     
     if nitems:
         nkeys = [itm[0] for itm in nitems]
-        me = _verify_keys(x.keys(), nkeys, trace, handler, keys_opt, extra_allowed)
+        me = _verify_keys(x.keys(), nkeys, trace, handler, keys_opt, keys_req, extra_allowed)
         
         if handler['key']['missing'] in _FIX_MODES and len(me['missing_all']):
             #messes up order if OD
@@ -1028,7 +1052,8 @@ def _verify_dict(x, norm, mode, trace, handler, copy=False):
 def _verify_pandaslike(x, norm, mode, trace, handler, copy=False):
     unit = norm.get('unit',nan)
     extra_allowed = norm.get('extra_allowed')
-    keys_opt = norm.get('keys_optional',[])
+    keys_opt = norm.get('optional',[])
+    keys_req = norm.get('required',nan)
     
     is_series = isinstance(x,pd.Series)
     is_df = isinstance(x,pd.DataFrame)
@@ -1082,16 +1107,21 @@ def _verify_pandaslike(x, norm, mode, trace, handler, copy=False):
         cols_opt = keys_opt.get('columns')
     else: index_opt = cols_opt = []
     
+    if isinstance(keys_req,dict):
+        index_req = keys_req.get('index')
+        cols_req = keys_req.get('columns')
+    else: index_req = cols_req = nan
+    
     if isinstance(extra_allowed,dict):
         ea_index = extra_allowed.get('index')
         ea_cols = extra_allowed.get('columns')
     else: ea_index = ea_cols = extra_allowed
     
     if is_df and ncols is not None:
-        me_cols = _verify_keys(x.columns, ncols, trace, handler, cols_opt, ea_cols)
+        me_cols = _verify_keys(x.columns, ncols, trace, handler, cols_opt, cols_req, ea_cols)
         
     if nindex is not None:
-        me_ind = _verify_keys(x.index, nindex, trace, handler, index_opt, ea_index)
+        me_ind = _verify_keys(x.index, nindex, trace, handler, index_opt, index_req, ea_index)
     
     if handler['key']['missing'] not in _FIX_MODES: pass
     elif len(me_ind['missing']) or len(me_cols['missing']):
@@ -1231,10 +1261,12 @@ def _get_missing_extra(x, norm):
     return {'missing': missing, 'extra': extra}
 
 
-def _verify_keys(x, norm, trace, handler, keys_optional=[], extra_allowed=False):
+def _verify_keys(x, norm, trace, handler, optional=[], required=None, extra_allowed=False):
     me = _get_missing_extra(x,norm)
-    missing = tuple(filter(lambda k: k not in keys_optional, me['missing']))
-    extra = tuple(filter(lambda k: k not in keys_optional, me['extra'])) if not extra_allowed else tuple()
+    extra = tuple(filter(lambda k: k not in optional, me['extra'])) if not extra_allowed else tuple()
+    missing = tuple(filter(lambda k: k not in optional, me['missing']))
+    if is_not_null(required):
+        missing = tuple(filter(lambda k: k in required, missing))
     
     len_missing,len_extra = len(missing),len(extra)
     if not len_missing + len_extra:
