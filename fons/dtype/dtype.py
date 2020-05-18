@@ -1,4 +1,5 @@
 import pandas as pd
+import inspect
 import datetime
 dt = datetime.datetime
 td = datetime.timedelta
@@ -20,19 +21,58 @@ _MERGER_NAMES = set()
 
 
 class DType(Routine):
+    
+    guts = None
+    template = None
+    id_attrs = []
+    set_id_attrs = False # if True, `for a in self.id_attrs: setattr(self, a, id[a])` is called
+    time_key = None
+    time_freq = None
+    storable = True
+    merger_cls = None
+    save_freq = '1T'
+    ftype = None
+    root = None
+    file_fmt = None
+    dir_fmt = None
+    init_data = False
+    index_col = None # For reading dataframe
+    index_dtype = None # For reading dataframe (if datetime use 'datetime64[ns]')
+    converters = None # For reading dataframe
+    ignore_index = True # When concatting dataframes
+    _reduce_reset_index = False
+    _reduce_update_references = False
+    
     def __init__(self, id={}, load=None, update=None, save=None, merge=None,*,
                  tickmgr={}, conns={}, name=None, reduce=1, TEST_MODE=False):
-        isdict = isinstance(id,dict)
+        isdict = isinstance(id, dict)
         iditer = iter(id)
+        self.id = {}
         for attr in self.id_attrs:
-            if getattr(self.__class__,attr,None) is not None: pass
-            else: setattr(self,attr,(id[attr] if isdict else next(iditer)))
-        """self.id = {attr: getattr(self,attr) for attr in self.id_attrs}
-        self.id_str = '_'.join(str(x) for x in self.id.values())"""
-            
+            try: 
+                value = id[attr] if isdict else next(iditer)
+            except (KeyError, StopIteration):
+                # Use class attribute if present
+                clsv = getattr(self.__class__, attr, None)
+                # inpsect.isfunction detects staticmethods and methods only
+                # inspect.ismethod detects classmethods only
+                if clsv is not None and not inspect.isfunction(clsv) and not inspect.ismethod(clsv):
+                    value = getattr(self.__class__, attr)
+                else:
+                    raise ValueError('Got id: {}, which is missing some params from: {}'.format(id, self.id_attrs))
+            self.id[attr] = value
+        
+        if self.set_id_attrs:
+            for attr in self.id_attrs:
+                setattr(self, attr, self.id[attr])
+        
+        self.id_str = '_'.join(str(x) for x in self.id.values())
+        
         if name is None and getattr(self,'_name',None) is None:
-            name = '{}_{}'.format(self.__class__.__name__,self.id_str)
-        super().__init__(tickmgr=tickmgr,name=name)
+            name = '{}_{}'.format(self.__class__.__name__, self.id_str)
+        
+        super().__init__(tickmgr=tickmgr, name=name)
+        
         #if it is empty dataframe, then the default (empty) RangeIndex does not interfere with concatenating
         # (e.g. (empty) RangeIndex + DatetimeIndex -> DatetimeIndex)
         self.guts = init_data(self.template)
@@ -292,37 +332,9 @@ class DType(Routine):
         """Modifications must NOT occur inplace. Called after loading and before saving."""
         return data
     
-    @property
-    def id(self):
-        return {attr: getattr(self,attr) for attr in self.id_attrs}
-    
-    @property
-    def id_str(self):
-        return '_'.join(str(x) for x in self.id.values())
-    
     async def close(self):
         await super().close()
         self._relay_stop_merger()
-        
-    guts = None
-    template = None
-    id_attrs = []
-    time_key = None
-    time_freq = None
-    storable = True
-    merger_cls = None
-    save_freq = '1T'
-    ftype = None
-    root = None
-    file_fmt = None
-    dir_fmt = None
-    init_data = False
-    index_col = None
-    index_dtype = None
-    converters = None
-    ignore_index = True
-    _reduce_reset_index = False
-    _reduce_update_references = False
 
   
 class ShadowMerger(LogiProcess):
