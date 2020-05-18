@@ -952,6 +952,7 @@ def _verify_defval(x, _defval_, **kw):
 def _verify_multi(x, _multi_, mode, trace, handler, copy=False):
     exceptions = []
     passed = False
+    x_ver = _null = object()
     
     for norm in _multi_:
         try:
@@ -971,7 +972,10 @@ def _verify_multi(x, _multi_, mode, trace, handler, copy=False):
  
         #A drawback of singling out -> _multi: [{'_type_:xr}, {'_type_':x}] only shows the first e msg
         #raise VeriError('Verification failed. The following exceptions occurred: {}'.format(exceptions))
-        
+    
+    if x_ver is _null:
+        x_ver = x if not copy else _copy(x)
+    
     return x_ver
 
 
