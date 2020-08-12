@@ -604,7 +604,7 @@ def _init_standard_5(TEST_MODE, stream_enabled=None):
     
     tlogger = getFonsLogger('T1',streams=False) #logger
     tloggers = getFonsLogger('T2',streams=stream_enabled) #logger2
-    tlogger0 = getFonsLogger('T0',streams=False)
+    tlogger0 = getFonsLogger('T0',0,streams=False)
     
     if not TEST_MODE:
         [x.setLevel(0) for x in (tlogger,tloggers,tlogger0)]

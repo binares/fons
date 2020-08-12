@@ -162,7 +162,7 @@ def test_update_settings_modified_time():
     _get_dict = lambda d: dict(__meta__=d['__meta__'])
     
     def _verify(d, path):
-        #add "modified" times to meta (if not already added)
+        #add "modified" times to create (if not already added)
         _keep_only_meta(d)
         _update(d)
         _keep_only_meta(d)

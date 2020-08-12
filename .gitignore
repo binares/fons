@@ -3,16 +3,20 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Eclipse
-.project
-.pydevproject
-
 # Fons settings file
 fons/settings.yaml
 
 # Copied test files
 test_io_update_settings_COPY.yaml
 test/test_io_update_settings_TEST3_COPY.yaml
+
+# Eclipse
+/.settings/
+/.project
+/.pydevproject
+
+# Vscode
+/.vscode/
 
 # C extensions
 *.so
