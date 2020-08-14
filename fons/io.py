@@ -620,7 +620,7 @@ def update_settings(new, old=None, verify=None,*, ftype=None,
     """
     if errors not in ('ignore','raise','log'):
         raise ValueError(errors)
-    logging_level = _log._level_to_int(logging_level)
+    logging_level = _log.level_to_int(logging_level)
     raise_errors = (errors == 'raise')
     vid_args = (raise_errors,)
         

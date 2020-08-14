@@ -30,9 +30,9 @@ class FonsLogger(logging.Logger):
         while hasattr(f, "f_code"):
             co = f.f_code
             filename = os.path.normcase(co.co_filename)
-            #added _srcfile2 (this file), so that .llog/.__call__ 
+            # added _srcfile2 (this file), so that .llog/.__call__ 
             # method would not show as caller
-            if filename in (logging._srcfile,getattr(logging,'_srcfile2')):
+            if filename in (logging._srcfile, getattr(logging, '_srcfile2')):
                 f = f.f_back
                 continue
             sinfo = None
@@ -48,20 +48,20 @@ class FonsLogger(logging.Logger):
             break
         return rv
     
-    def handle(self, record, declude_with_queues=[]):
+    def handle(self, record, *args, declude_with_queues=[], **kw):
         """
         Call the handlers for the specified record.
 
         This method is used for unpickled records received from a socket, as
         well as those created locally. Logger-level filtering is applied.
         """
-        #`declude_with_queues` is necessary for avoiding infinite recursion
-        #in handling QueueHandler records (QueueHandler is used to connect 
-        #with child processes)
+        # `declude_with_queues` is necessary for avoiding infinite recursion
+        # in handling QueueHandler records (QueueHandler is used to connect 
+        # with child processes)
         if (not self.disabled) and self.filter(record):
-            self.callHandlers(record, declude_with_queues)
-            
-    def callHandlers(self, record, declude_with_queues=[]):
+            self.callHandlers(record, declude_with_queues=declude_with_queues)
+    
+    def callHandlers(self, record, *args, declude_with_queues=[], **kw):
         """
         Pass a record to all relevant handlers.
 
@@ -71,7 +71,7 @@ class FonsLogger(logging.Logger):
         logger with the "propagate" attribute set to zero is found - that
         will be the last logger whose handlers are called.
         """
-        q_check = lambda h: isinstance(h,QueueHandler) and h.queue in declude_with_queues
+        q_check = lambda h: isinstance(h, QueueHandler) and h.queue in declude_with_queues
         c = self
         found = 0
         while c:
@@ -168,14 +168,14 @@ DEFAULT_ROOT_DIR = _read_root_dir()
 
 logging._srcfile2 = os.path.normcase(FonsLogger.findCaller.__code__.co_filename)
 
-#For excluding this module from Logger's record (like logging module does)
-#and fixing infinite recursion caused by LogListener trying to handle 
-#QueueHandler's record (this won't affect user defined QueueHandlers)
+# For excluding this module from Logger's record (like logging module does)
+# and fixing infinite recursion caused by LogListener trying to handle 
+# QueueHandler's record (this won't affect user defined QueueHandlers)
 logging.Logger.findCaller = FonsLogger.findCaller
 logging.Logger.handle = FonsLogger.handle
 logging.Logger.callHandlers = FonsLogger.callHandlers
 
-#This was necessary for something. For making compatible with new Logger methods?
+# This was necessary for something. For making compatible with new Logger methods?
 _rhandlers,_rfilters = logging.root.handlers, logging.root.filters
 logging.root = logging.RootLogger(logging.root.level)
 logging.root.handlers = _rhandlers
@@ -208,20 +208,42 @@ _s5_names = {
     'tlogger0': 'T0'}
 _Standard_5 = namedtuple('StandardLogging_5','logger logger2 tlogger tloggers tlogger0')
 _Standard_5.__new__.__defaults__ = tuple(logging.getLogger(_s5_names[x]) for x in _Standard_5._fields)
-
-#Set test loggers level to 0
-for _logger in _Standard_5.__new__.__defaults__[2:]:
-    _logger.setLevel(0)
-
-#_standard_5 = _Standard_5()    
-#standard_5 = _Standard_5(*[RedirectingLogger(x) for x in _Standard_5._fields])
+ 
 standard_5 = _Standard_5()
 
+# The difference between logger and logger2 (and tlogger / tloggers) is that after calling setup_logging(),
+# logger2 (and tloggers) will *also* stream to console, while logger (and tlogger, tlogger0) only stream to file
 logger = standard_5.logger
 logger2 = standard_5.logger2
 tlogger = standard_5.tlogger
 tloggers = standard_5.tloggers
 tlogger0 = standard_5.tlogger0
+
+
+for _logger in standard_5[:2]:
+    _logger.setLevel(10)
+# Set test loggers' level to 0
+for _logger in standard_5[2:]:
+    _logger.setLevel(0)
+
+
+class TempStreamHandler(logging.StreamHandler):
+    """
+    Only stream if root has not handlers set (to avoid duplication)
+    """
+    def handle(self, record):
+        if not logging.root.handlers and not _mp_logging_enabled:
+            return logging.StreamHandler.handle(self, record)
+
+
+# We want the logger and logger2 to stream only if user has not called basicConfig(),
+# and revoke the streaming when user decides to call it later
+if not logging.root.handlers and not _mp_logging_enabled:
+    _h = TempStreamHandler()
+    _h.setFormatter(logging.Formatter(logging.BASIC_FORMAT))
+    logger.addHandler(_h)
+    logger2.addHandler(_h)
+
 
 #----------------------------------------------
 
@@ -253,7 +275,8 @@ def initiate_FonsFormat():
 #-------------------------------------------
 
 def getFonsLogger(name=None, lvl='DEBUG', streams=True, fmt=None, use_FonsFormatter=True):
-    if name is None: name = __name__
+    if name is None:
+        name = __name__
     logger = logging.getLogger(name)
     logger.setLevel(lvl)
     
@@ -262,9 +285,7 @@ def getFonsLogger(name=None, lvl='DEBUG', streams=True, fmt=None, use_FonsFormat
     elif fmt == 'simpleformat':
         fmt = '%(asctime)s %(message)s'
     
-    for l in logger.handlers[:]:
-        if isinstance(l,logging.StreamHandler):
-            logger.removeHandler(l)
+    remove_stream_handlers(logger)
     
     if streams:
         console = logging.StreamHandler()
@@ -293,7 +314,7 @@ class Tee(object):
                                       use_FonsFormatter=_globals['use_FonsFormatter'])
         else: self.logger = logger
             
-        self.lvl = _level_to_int(lvl)
+        self.lvl = level_to_int(lvl)
 
     def write(self, obj):
         for f in self.files:
@@ -373,7 +394,7 @@ class LogiGUI(tk.Frame):
 
 class LogListener(threading.Thread):
     def __init__(self, queue):
-        super().__init__(name='LogListener',daemon=True)
+        super().__init__(name='LogListener', daemon=True)
         self.queue = queue
         
     def run(self):
@@ -385,7 +406,6 @@ class LogListener(threading.Thread):
                     break
                 self.handle(record)
             except Exception:
-                import traceback
                 print('Whoops! Problem:', file=sys.stderr)
                 traceback.print_exc(file=sys.stderr)
                 
@@ -423,7 +443,7 @@ class LogListener(threading.Thread):
         if not record_is_main and not isin_tk0:
             _logger = logging.getLogger(record.name)
             #add [self.queue] to eliminate possibility of recursion
-            _logger.handle(record,[self.queue])
+            _logger.handle(record, declude_with_queues=[self.queue])
             
         """if '*' in _tklogiprocesses and display:
             _tklogiprocesses['*'].text_handler.emit(record)"""
@@ -460,7 +480,14 @@ def init_main_tab(nb):
     init_tab(nb,'MainProcess')
 
 
-def _level_to_int(lvl):
+def remove_stream_handlers(logger):
+    for h in logger.handlers[:]:
+        # FileHandler is subclass of StreamHandler, but here we mean handlers streaming to console
+        if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler):
+            logger.handlers.remove(h)
+
+
+def level_to_int(lvl):
     return lvl if isinstance(lvl,int) else getattr(logging,lvl.upper())
     #raise TypeError('Level must be either of type <str> or <int>, got {}'.format(type(lvl)))
 
@@ -478,6 +505,7 @@ def multi_module_logging(modules, names, loggers):
             
 
 def standard_logging(dir=None, f_ending=None, TEST_MODE=False, modules=None, **kw):
+    """A standardized logging to file"""
     global _sys_stdout_assigned
     backup = sys.stdout
     if dir is None:
@@ -488,10 +516,10 @@ def standard_logging(dir=None, f_ending=None, TEST_MODE=False, modules=None, **k
             dir = os.path.join(dpath,'logs','other')
         if TEST_MODE:
             dir += '_TM'
-        os.makedirs(dir,exist_ok=True)
+        os.makedirs(dir, exist_ok=True)
 
 
-    if TEST_MODE and isinstance(f_ending,str) and not f_ending.endswith('_TM'):
+    if TEST_MODE and isinstance(f_ending, str) and not f_ending.endswith('_TM'):
         f_ending += '_TM'
         
     params = {'dir': dir,
@@ -499,7 +527,7 @@ def standard_logging(dir=None, f_ending=None, TEST_MODE=False, modules=None, **k
               'use_FonsFormatter':True,
               'pair_with_fwriters': [sys.stdout],
               'f_ending': f_ending,
-              'lvl_handlers': ['WARNING',{'lvl':'INFO','use_rotating':True}],
+              'lvl_handlers': ['WARNING', {'lvl': 'INFO', 'use_rotating': True}],
               'use_rotating':True,
               'maxBytes':5*1024*1024,
               'backupCount':5}
@@ -534,22 +562,26 @@ def standard_logging(dir=None, f_ending=None, TEST_MODE=False, modules=None, **k
 
 
 def quick_logging(test=2, add_stream_handlers=False):
-    logging.basicConfig(level=10)
-    #[x.setLevel(10) for x in standard_5[2:2+test]]
-    [x.setLevel(10) for x in standard_5[:2+test]]
-    [x.setLevel(0) for x in standard_5[2+test:]]
-    #They all already stream to console as only (default) logging.root.handlers are set.
-    #//[standard_5[i].addHandler(logging.StreamHandler()) for i in [0,2]]
     if add_stream_handlers:
-        [getFonsLogger(x.name,x.level,True) for x in standard_5[:2+test]]
+        remove_stream_handlers(logging.root) # to avoid duplicate streaming
+    else:
+        for _logger in standard_5:
+            remove_stream_handlers(_logger)
+        logging.basicConfig(level=10) # stream via root handler
+    
+    for i,_logger in enumerate(standard_5):
+        level = 10 if i < (2 + test) else 0
+        getFonsLogger(_logger.name, level, add_stream_handlers)
 
 
 def standard_mp_logging(queue, level='INFO', fmt=None, use_FonsFormatter=True, TEST_MODE=False):
-    global _sys_stdout_assigned,_mp_logging_enabled
+    global _sys_stdout_assigned, _mp_logging_enabled
     _mp_logging_enabled = True
 
-    if fmt is None: fmt = _default_fmt
-    if use_FonsFormatter: logging.Formatter = FonsFormatter
+    if fmt is None:
+        fmt = _default_fmt
+    if use_FonsFormatter:
+        logging.Formatter = FonsFormatter
     
     try: _modules[_modules.index('__main__')] = '__mp_main__'
     except ValueError: pass
@@ -559,7 +591,7 @@ def standard_mp_logging(queue, level='INFO', fmt=None, use_FonsFormatter=True, T
     print(_modules)
     print([m in sys.modules for m in _modules])
     print(list(sys.modules)[:20])"""
-    multi_module_logging(_modules,standard_5._fields,standard_5)
+    multi_module_logging(_modules, standard_5._fields, standard_5)
     
     for h in logging.root.handlers[:]:
         logging.root.removeHandler(h)
@@ -621,7 +653,7 @@ def setup_logging(dir=None, lvl='INFO', pair_with_fwriters=[],
                   fname=None, f_ending=None, lvl_handlers=[],
                   use_rotating=True, maxBytes=5*1024*1024, filemode='a',
                   backupCount=2, fmt=None, use_FonsFormatter=True):
-        
+    """Attaches file handlers to root logger"""
     if dir is None:
         dir = ''
 
@@ -646,15 +678,15 @@ def setup_logging(dir=None, lvl='INFO', pair_with_fwriters=[],
         fmt = _default_fmt
     
     
-    lvl_handlers = lvl_handlers.copy()
+    lvl_handlers = lvl_handlers[:]
     
-    if not any(isinstance(L,dict) and _level_to_int(L.get('lvl',L.get('level'))) == _level_to_int(lvl)
-               or not isinstance(L,dict) and _level_to_int(L) == _level_to_int(lvl) for L in lvl_handlers):
+    if not any(isinstance(L,dict) and level_to_int(L.get('lvl',L.get('level'))) == level_to_int(lvl)
+               or not isinstance(L,dict) and level_to_int(L) == level_to_int(lvl) for L in lvl_handlers):
         lvl_handlers.append(lvl)
     
-    #Removes all previous handlers 
-    #(e.g. if logging.log() called before setup_logging, 
-    # it automatically adds StreamHandler, and basicConfig(handlers=handlers) won't add the new handlers)
+    # Removes all previous handlers 
+    # (e.g. if logging.log() called before setup_logging, 
+    #  it automatically adds StreamHandler, and basicConfig(handlers=handlers) won't add the new handlers)
     keep_handlers = [x for x in logging.root.handlers if isinstance(x,QueueHandler)]
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
@@ -662,23 +694,27 @@ def setup_logging(dir=None, lvl='INFO', pair_with_fwriters=[],
     handlers = []
     
     for L in lvl_handlers:
-        if dir is False: break
-        if not isinstance(L,dict): L={'lvl':L}
+        if dir is False:
+            break
+        if not isinstance(L,dict):
+            L={'lvl': L}
 
-        h_lvl = L.get('lvl',L.get('level'))
-        if isinstance(h_lvl,str): h_lvl = h_lvl.upper()
+        h_lvl = L.get('lvl', L.get('level'))
+        if isinstance(h_lvl,str):
+            h_lvl = h_lvl.upper()
 
         #h_rotating = L.get('use_rotating',[True,False][level_to_int(h_lvl) > 30])
-        h_filemode = L.get('filemode',filemode)
-        h_backupCount = L.get('backupCount',backupCount)
-        h_max_size = L.get('maxBytes',maxBytes)
+        h_filemode = L.get('filemode', filemode)
+        h_backupCount = L.get('backupCount', backupCount)
+        h_max_size = L.get('maxBytes', maxBytes)
 
             
         fpth = os.path.join(dir, fname[:-4] + '_{}.log'.format(h_lvl))
         if use_rotating:
             h = RotatingFileHandler(fpth, mode=h_filemode, maxBytes=h_max_size, 
                                      backupCount=h_backupCount, encoding='utf-8', delay=0)
-        else:h = logging.FileHandler(fpth,mode=h_filemode)
+        else:
+            h = logging.FileHandler(fpth,mode=h_filemode)
         h.setLevel(h_lvl)
         
         handlers.append(h)
@@ -689,35 +725,35 @@ def setup_logging(dir=None, lvl='INFO', pair_with_fwriters=[],
                         format = fmt,
                         #filemode=filemode,
                         handlers=handlers,
-                        level=_level_to_int(lvl))#,\
+                        level=level_to_int(lvl))#,\
                         #datefmt = '%Y-%m-%dT%H:%M:%S')
     
 
     if len(pair_with_fwriters):
-        synched_writer = Tee(pair_with_fwriters,lvl,logging)
+        synched_writer = Tee(pair_with_fwriters, lvl, logging)
         return synched_writer
 
 
 
 if __name__ == '__main__':
+    logger.debug('first output (from L1)')
     logdir = os.path.join('_test')
     backup = sys.stdout
-    input()
-    #Strange discovery:
-    # if logging.log used before initiating handlers, handlers will be void 
-    # (everything is directed to logging module instead of handler)
-    #Don't do:
-    print('Handlers 0: {}'.format(logging.root.handlers))
-    logging.warning('HERE')
-    print('Handlers now: {}'.format(logging.root.handlers))
-    
+    # Strange discovery:
+    #  if logging.log used before initiating handlers, handlers will be void 
+    #  (everything is directed to logging module instead of handler)
+    # Don't do:
+    print('Handlers 0: {}'.format(logging.root.handlers)) # []
+    logging.warning('HERE (from root)')
+    print('Handlers now: {}'.format(logging.root.handlers)) # [<StreamHandler <stderr> (NOTSET)>]
+    logger.debug('HERE (from L1)')
     logging2,sys.stdout = setup_logging(logdir,
                                       lvl='INFO',
                                       #lvl_handlers =  [{'lvl':'INFO','maxBytes':0.5*1024*1024},{'lvl':'WARNING','use_rotating':True},'CRITICAL'],
                                       use_rotating=True,
                                       use_FonsFormatter=True,
                                       pair_with_fwriters=[sys.stdout],
-                                      f_ending='main()',
+                                      f_ending='main',
                                       filemode='a',
                                       maxBytes = 5242880,
                                       backupCount = 5)
