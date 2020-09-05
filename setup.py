@@ -6,7 +6,7 @@ README = (HERE / "README.md").read_text()
 
 setup(
    name='fons',
-   version='0.2.1',
+   version='0.3.0',
    description='A broad range of python tools. Some uses: round datetimes, '\
                'verify input data, execute functions by schedule, parse argv',
    long_description=README,

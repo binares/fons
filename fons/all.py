@@ -10,7 +10,7 @@ from fons.log import (setup_logging, standard_logging, get_standard_5,
                       quick_logging)
 
 import fons.gui as gui
-from fons.gui import (TkThread, NbGUI)
+from fons.gui import (TkThread, NbGUI, TkLogiProcessComplex)
 
 import fons.debug as _debug
 from fons.debug import (debug, set_pm_hook, trylog, asyncTryLog, aTryLog, 
