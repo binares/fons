@@ -402,6 +402,57 @@ def test_verify_range(x, norm, raises):
         vfy.verify_data(x, norm)
 
 
+test_verify_size_input = [
+    [[1], {'_type_': list, 'size': '23'}, vfy.BadInstruction],
+    [[1], {'_type_': list, 'size': '[2,2)'}, vfy.BadInstruction],
+    [[1], {'_type_': list, 'size': {'min': 2, 'exact': 1}}, vfy.BadInstruction],
+    [[1], {'_type_': list, 'size': {'max': 3, 'exact': 4}}, vfy.BadInstruction],
+    [['a','b'], {'_type_': list, 'size': '[2,3]'}, None],
+    [['a'], {'_type_': list, 'size': '[2,3]'}, vfy.VeriIndexError],
+    [['a'], {'_type_': list, 'size': 1}, None],
+    [['a'], {'_type_': list, 'size': 2}, vfy.VeriIndexError],
+]
+
+@pytest.mark.parametrize("x,norm,raises", test_verify_size_input)
+def test_verify_size(x, norm, raises):
+    if raises:
+        with pytest.raises(raises):
+            vfy.verify_data(x, norm)
+    else:
+        vfy.verify_data(x, norm)
+
+
+
+def _assert_are_equals(y, raises=None):
+    def are_equals(x):
+        if raises is None:
+            assert x == y
+        elif x != y:
+            raise raises('{} != {}'.format(x, y))
+    
+    return are_equals
+
+
+test_user_defined_vfy_input = [
+    [1, {'_type_': int, '_vfy_': 'x'}, vfy.BadInstruction],
+    [1, {'_type_': int, '_vfy_': _assert_are_equals(1)}, None],
+    [1, {'_type_': int, '_vfy_': _assert_are_equals(2)}, vfy.VeriError],
+    [1, {'_type_': int, '_vfy_': _assert_are_equals(2, ValueError)}, vfy.VeriValueError],
+    [1, {'_type_': int, '_vfy_': _assert_are_equals(2, IndexError)}, vfy.VeriIndexError],
+    [1, {'_vfy_': _assert_are_equals(1)}, vfy.BadInstruction], # _type_ must be defined
+    [1, {'_call_': None, '_vfy_': _assert_are_equals(1)}, None], # workaround of the previous one
+]
+
+@pytest.mark.parametrize("x,norm,raises", test_user_defined_vfy_input)
+def test_user_defined_vfy(x, norm, raises):
+    if raises:
+        e_info = None
+        with pytest.raises(raises) as e_info:
+            vfy.verify_data(x, norm)
+        #print('raised: {}'.format(str(e_info._excinfo[1])))
+    else:
+        vfy.verify_data(x, norm)
+
 #------------------
 #Tests for some new special cases:
 def test_special():
@@ -544,3 +595,9 @@ def test_elements___call__():
     assert d == {'a': 2, 'b': 'B'}
     d['b'] = 'X'
     dtyct_.verify(d)
+
+
+def test_elements_vfy():
+    norm = Element(vfy=_assert_are_equals(2), type=int)
+    _verify(norm, 2, None)
+    _verify(norm, 3, vfy.VeriError)

@@ -66,19 +66,22 @@ class BadInstruction(BaseVeriError):
 
 
 class VeriError(BaseVeriError):
-    def __init__(self, trace=[], got=nan, expected=nan, *args):
-        if trace is not None:
-            self.trace = trace
-        else:
-            self.trace = []
-        
-        self.level = max(0, len(self.trace) - 1)
+    def __init__(self, trace=None, got=nan, expected=nan, custom_msg=nan, *args):
+        if trace is None:
+            trace = []
+        self.trace = trace
+        self._assign_level()
         
         self.got = got 
         self.expected = expected
+        self.custom_msg = custom_msg
         
         self.craft_msg()
-        
+    
+    
+    def _assign_level(self):
+        self.level = max(0, len(self.trace) - 1)
+    
     
     def craft_msg(self):
         msg= '{}; '.format(''.join(self.trace))
@@ -89,6 +92,8 @@ class VeriError(BaseVeriError):
         if self.expected is not nan:
             parts.append('{}{}'.format(self._expstr, repr(self.expected)))
         eg = ", ".join(parts)
+        if self.custom_msg is not nan:
+            eg += '; ' + repr(self.custom_msg)
         
         msg = (msg + eg).strip()
         

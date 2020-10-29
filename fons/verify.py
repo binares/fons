@@ -23,9 +23,10 @@ is_null = lambda x: not is_not_null(x)
 
 
 _EXCEPTIONS = {'type': VeriTypeError,
-              'value': VeriValueError,
-              'key': VeriKeyError,
-              'index': VeriIndexError}
+               'value': VeriValueError,
+               'key': VeriKeyError,
+               'index': VeriIndexError,
+               'general': VeriError,}
 
 _EXC_MAP = {VeriTypeError: TypeError,
             VeriValueError: ValueError,
@@ -108,7 +109,7 @@ CONTAINERS = (dict, list, tuple, set, pd.Series, pd.DataFrame, pd.Index, np.ndar
 COPY_METHOD = (pd.DataFrame, pd.Series, pd.DatetimeIndex, pd.Index, np.ndarray)
 
 
-RESERVED = ('_type_', '_call_', '_value_', '_multival_', '_defval_', '_copy_', '_isnorm_', '_multi_')
+RESERVED = ('_type_', '_call_', '_value_', '_multival_', '_defval_', '_copy_', '_isnorm_', '_multi_', '_vfy_')
 NORM_EXTRA = {'_type_':str,
               '_value_': '_keep_'}
 
@@ -519,6 +520,8 @@ def normalize_element(x, default=nan):
     _normalize_dtypes(d)
     _normalize_opt_req(d)
     
+    _normalize_vfy(d)
+    
     _type_ = d.get('_type_',nan)
     if is_given(_type_):
         if isinstance(_type_, tuple):
@@ -655,29 +658,56 @@ def _normalize_call(d):
 
 
 def _normalize_size(d):
-    size = d.get('size',nan)
+    size = _size = d.get('size', nan)
     if is_null(size):
-        d.pop('size',-1)
-    elif not isinstance(size, (int, dict)):
-        raise BadInstruction('"size" must be int/dict; got: {}'.format(type(size)))
+        d.pop('size', -1)
+    elif not isinstance(size, (int, dict, str)):
+        raise BadInstruction('"size" must be int/dict/str; got: {}'.format(type(size)))
     elif isinstance(size, int):
         d['size'] = {'exact': size}
-    else:
-        for arg in ('min','max','exact'):
-            value = size.get(arg)
-            if value is None: continue
+    elif isinstance(size, str):
+        _range = _parse_str_range(size, num_type=int)
+        _min = max(0, _range[0] if size.startswith('[') else _range[0]+1) if _range[0] is not None else None
+        _max = max(0, _range[1] if size.endswith(']') else _range[1]-1) if _range[1] is not None else None
+        d['size'] = {'min': _min, 'max': _max}
+    
+    size = d.get('size', nan)
+    if is_not_null(size):
+        for k in ('min','max','exact'):
+            value = size.get(k)
+            if is_null(value):
+                size.pop(k, -1)
             elif not isinstance(value, int):
-                raise BadInstruction('"size" keyword "{}" must be of type int; got: {}'.format(
-                    arg, type(value)))
+                raise BadInstruction('"size" keyword "{}" must be of type <int>; got: {}; size: {}'.format(k, type(value), _size))
+            elif value < 0:
+                raise BadInstruction('"size" keyword "{}" must be >= 0; got: {}; size: {}'.format(k, value, _size))
+        _min, _max, _exact = size.get('min'), size.get('max'), size.get('exact')
+        if _min is not None and _max is not None and _min > _max:
+            raise BadInstruction('"size" keyword "min" < "max" is not satisfied; size: {}'.format(_size))
+        if _min is not None and _exact is not None:
+            raise BadInstruction('"size" must not have both "min" and "exact" keywords; size: {}'.format(_size))
+        if _max is not None and _exact is not None:
+            raise BadInstruction('"size" must not have both "max" and "exact" keywords; size: {}'.format(_size))
 
 
-def _parse_number(x):
+def _parse_number(x, num_type=float):
     if not x or x=='null':
         return None
     try: 
-        return float(x)
+        return num_type(x)
     except ValueError:
         return '?'
+
+
+def _parse_str_range(range, num_type=float):
+    first, middle, last = range[:1], range[1:-1], range[-1:]
+    _range = tuple(_parse_number(x.strip(), num_type) for x in middle.split(','))
+    correct = '?' not in _range
+    all_num = all(isinstance(x, num_type) for x in _range)
+    if not range or first not in '[(' or last not in '])' or len(_range)!=2 or not correct \
+            or all_num and _range[0]>_range[1]:
+        raise BadInstruction('Not understood {} range: {}'.format(num_type.__name__, range))
+    return _range
 
 
 def _normalize_range(d):
@@ -686,14 +716,7 @@ def _normalize_range(d):
         d.pop('range',-1)
     # range for verifying int/float
     elif isinstance(range,str):
-        first, middle, last = range[:1], range[1:-1], range[-1:]
-        _range = tuple(_parse_number(x.strip()) for x in middle.split(','))
-        correct = '?' not in _range
-        all_num = all(isinstance(x, float) for x in _range)
-        if not range or first not in '[(' or last not in '])' or len(_range)!=2 or not correct \
-                or all_num and _range[0]>_range[1]:
-            raise BadInstruction('Not understood scalar "range": {}'.format(range))
-        d['_range'] = _range
+        d['_range'] = _parse_str_range(range)
     # range for list/tuple/set initiation
     elif isinstance(range,int):
         d['range'] = (0,range)
@@ -775,6 +798,15 @@ def _normalize_opt_req(d):
         if is_not_null(final):
             d[key] = final
 
+
+def _normalize_vfy(d):
+    _vfy_ = d.get('_vfy_', nan)
+    if is_null(_vfy_):
+        d.pop('_vfy_', -1)
+    elif not hasattr(_vfy_, '__call__'):
+        raise BadInstruction('_vfy_ must be callable, d: {}'.format(d))
+
+
 #-------------------------------------
 #type - error/warn/ignore/fix/fix+
 #value - error/warn/ignore/fix/fix+
@@ -811,8 +843,8 @@ _ERROR_MODES = ('error',)
 _FIX_MODES = ('fix','fix-')
 _WARN_MODES = ('warn','fix')
 
-_HANDLER_KEYS = ('type','value','key','index')
-_H_OBJ_KEYS = ('type','value')
+_HANDLER_KEYS = ('type','value','key','index','general')
+_H_OBJ_KEYS = ('type','value','general')
 _H_CONTAINER_KEYS = ('key','index')
 _H_CONTAINER_OPTIONS = ('missing','extra')
 
@@ -876,7 +908,7 @@ def verify_data(x, norm, mode='error', copy=False, **kw):
     else:
         x_ver = x
     
-    passed = pd.Series(True, ['type','value','range'])
+    passed = pd.Series(True, ['type','value','range','vfy'])
     
     
     #-type-
@@ -919,10 +951,19 @@ def verify_data(x, norm, mode='error', copy=False, **kw):
             _handle_error(handler, 'value', [trace2, x_ver, 'in range: {}'.format(range)])
     
     
+    _vfy_ = norm.get('_vfy_')
+    if is_not_null(_vfy_) and passed.all():
+        try: _vfy_(x_ver)
+        except Exception as e:
+            passed.vfy = False
+            e_type, e_args = _parse_user_error(e, trace2, x_ver)
+            _handle_error(handler, e_type, e_args)
+    
+    
     if not passed.all():
         x_ver = init_data(norm)
-        
-        
+    
+    
     return x_ver
 
 
@@ -1480,10 +1521,10 @@ def _single_out(errors):
         #the first arg begins with trace, which'll be identical for same lvl same type errors
 
         #e_args.extend(e.args)
-        e_args = e.args
+        e_args = e.args # this includes trace, got, expected, custom_msg, and the *args
         msgs.append(e.msg)
     
-    new_e = errors[0].__class__(*e_args) #??
+    new_e = errors[0].__class__(*e_args) # use the info of the last error
     new_e.msg = " || ".join(msgs)
     
     return {'e': new_e, 'i': e_inf['i']}
@@ -1582,8 +1623,27 @@ def _mode_specs_from_error(e,handler):
         
         
     return specs
-        
-    
+
+
+def _parse_user_error(e, trace, got=nan, expected=nan, custom_msg=nan):
+    args = [trace, got, expected, custom_msg]
+    if type(e) in _EXC_MAP.values():
+        e_type = next(x for x,y in _EXC_MAP.items() if type(e)==y).type
+        args[3] = nan if not e.args else (e.args[0] if len(e.args)==1 else e.args)
+        return e_type, args
+    elif isinstance(e, VeriError):
+        args[0] = list(trace) + list(e.trace)
+        if e.got is not nan:
+            args[1] = e.got
+        if e.expected is not nan:
+            args[2] = e.expected
+        if e.custom_msg is not nan:
+            args[3] = e.custom_msg
+        return e.type, args
+    else:
+        args[3] = e
+        return 'general', args
+
 
 def convert_exception(e):
     t = _EXC_MAP.get(type(e))
@@ -1634,6 +1694,7 @@ class Element:
         'values': ['values', 'v'],
         'items': ['items'],
         'multi': ['_multi_','multi'],
+        'vfy': ['_vfy_', 'vfy'],
         'isnorm': ['_isnorm_','isnorm'],
     }
     
