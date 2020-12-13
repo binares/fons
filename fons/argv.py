@@ -261,3 +261,55 @@ def parse_argv(argv, apply={}):
 
 def is_positional(x):
     return not x.startswith('-') and ('=') not in x
+
+
+def _push(obj, l, depth):
+    while depth:
+        l = l[-1]
+        depth -= 1
+    
+    l.append(obj)
+
+
+def _flatten(groups):
+    new_list = []
+    unjoined_chars = []
+    
+    for x in groups:
+        if not isinstance(x, str):
+            if unjoined_chars:
+                new_list.append(''.join(unjoined_chars))
+                unjoined_chars = []
+            new_list.append(_flatten(x))
+        else:
+            unjoined_chars.append(x)
+    
+    if unjoined_chars:
+        new_list.append(''.join(unjoined_chars))
+    
+    return new_list
+
+
+def parse_parentheses(s, definition='()'):
+    """a(b(cd)f) -> ['a', ['b', ['cd'], 'f']]"""
+    # https://stackoverflow.com/a/50702934
+    groups = []
+    depth = 0
+    left, right = definition
+    
+    try:
+        for char in s:
+            if char == left:
+                _push([], groups, depth)
+                depth += 1
+            elif char == right:
+                depth -= 1
+            else:
+                _push(char, groups, depth)
+    except IndexError:
+        raise ValueError('Parentheses mismatch')
+    
+    if depth > 0:
+        raise ValueError('Parentheses mismatch')
+    else:
+        return _flatten(groups)

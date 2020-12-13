@@ -53,7 +53,7 @@ import fons.dtype.store as store
 import fons.iter as iter
 import fons.verify as verify
 
-from fons.argv import parse_argv
+from fons.argv import (parse_argv, parse_parentheses)
 from fons.dtype.dtype import (DType, ShadowMerger)
 from fons.iter import (flatten, flatten2, flatten_dict, fliter, is_flat, unique, consume,
                        sequence_insert)
