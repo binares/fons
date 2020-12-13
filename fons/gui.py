@@ -1,5 +1,7 @@
-import tkinter as tk
-import tkinter.ttk as ttk
+"""
+Make sure you have tkinter installed before using the features of this module.
+`sudo apt-get install python3-tk`
+"""
 import json
 from copy import deepcopy
 from collections import OrderedDict
@@ -57,6 +59,9 @@ def get_default_CFG(processes, dtypes=None):
 class NbGUI:
     """Notebook styled gui"""
     def __init__(self, config={}):
+        import tkinter as tk
+        import tkinter.ttk as ttk
+        
         self.root = tk.Tk()
         self.root.geometry('975x475')
         #self.root.resizable(0, 0)
@@ -468,7 +473,9 @@ class TkLogiProcessComplex:
         }
         
         self._gui_thread = TkThread(config, daemon=True)
-        time.sleep(0.2)
+        _started = time.time()
+        while getattr(self._gui_thread, 'gui', None) is None and time.time() - _started < 5: # wait till _gui_thread starts
+            time.sleep(0.05)
         self._gui = self._gui_thread.gui
         self._nb = self._gui_thread.gui.nb
         if self.settings_path:

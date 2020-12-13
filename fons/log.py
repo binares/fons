@@ -4,8 +4,6 @@ import time
 import sys,os,io
 from collections import namedtuple
 import traceback
-import tkinter as tk
-import tkinter.scrolledtext as ScrolledText
 import threading
 import multiprocessing
 import warnings
@@ -330,18 +328,22 @@ class TKConsoleHandler(logging.Handler):
     # Adapted from Moshe Kaplan: https://gist.github.com/moshekaplan/c425f861de7bbf28ef06
 
     def __init__(self, text):
+        import tkinter as tk
+        
         logging.Handler.__init__(self)
         self.setFormatter(FonsFormatter(_default_fmt))
         self.text = text
+        self._tk = tk
+        
 
     def emit(self, record):
         msg = self.format(record)
         def append():
             self.text.configure(state='normal')
-            self.text.insert(tk.END, msg + '\n')
+            self.text.insert(self._tk.END, msg + '\n')
             self.text.configure(state='disabled')
             # Autoscroll to the bottom
-            self.text.yview(tk.END)
+            self.text.yview(self._tk.END)
         # This is necessary because we can't modify the Text from other threads
         self.text.after(0, append)
 
@@ -355,42 +357,50 @@ class TKConsoleHandler(logging.Handler):
         self.text.configure(state='normal')
         self.text.delete(1.0, 2.0) #tk.END)
         self.text.configure(state='disabled')
-        
 
-class LogiGUI(tk.Frame):
-    def __init__(self, parent, *args, loggers=[], **kwargs):
-        tk.Frame.__init__(self, parent, *args, **kwargs)
-        self.root = parent
-        if loggers is None: loggers = []
-        elif isinstance(loggers,str): loggers = [loggers]
-        self.loggers = loggers
-        self.build_gui()
 
-    def build_gui(self):                    
-        # Build GUI
-        #self.root.title(self.l_name)
-        self.root.option_add('*tearOff', 'FALSE')
-        self.grid(column=0, row=0, sticky='nesw')
-        self.grid_columnconfigure(0, weight=1, uniform='a')
-        self.grid_columnconfigure(1, weight=1, uniform='a')
-        self.grid_columnconfigure(2, weight=1, uniform='a')
-        self.grid_columnconfigure(3, weight=1, uniform='a')
-
-        # Add text widget to display logging info
-        st = ScrolledText.ScrolledText(self, state='disabled')
-        st.configure(font='TkFixedFont')
-        #.grid didn't expand vertically for some reason
-        #st.grid(column=0, row=1, sticky='nesw', columnspan=4)
-        st.pack(fill="both", expand=True)
-        
-        # Create textLogger
-        self.text_handler = TKConsoleHandler(st)     
-
-        # Add the handler to logger
-        for l in self.loggers:
-            logger = l if isinstance(l,logging.Logger) else logging.getLogger(l)      
-            logger.addHandler(self.text_handler)
+def _create_logiGUI_class():
+    import tkinter as tk
     
+    class LogiGUI(tk.Frame):
+        def __init__(self, parent, *args, loggers=[], **kwargs):
+            tk.Frame.__init__(self, parent, *args, **kwargs)
+            self.root = parent
+            if loggers is None:
+                loggers = []
+            elif isinstance(loggers,str):
+                loggers = [loggers]
+            self.loggers = loggers
+            self.build_gui()
+    
+        def build_gui(self):
+            from tkinter.scrolledtext import ScrolledText
+            # Build GUI
+            #self.root.title(self.l_name)
+            self.root.option_add('*tearOff', 'FALSE')
+            self.grid(column=0, row=0, sticky='nesw')
+            self.grid_columnconfigure(0, weight=1, uniform='a')
+            self.grid_columnconfigure(1, weight=1, uniform='a')
+            self.grid_columnconfigure(2, weight=1, uniform='a')
+            self.grid_columnconfigure(3, weight=1, uniform='a')
+    
+            # Add text widget to display logging info
+            st = ScrolledText(self, state='disabled')
+            st.configure(font='TkFixedFont')
+            #.grid didn't expand vertically for some reason
+            #st.grid(column=0, row=1, sticky='nesw', columnspan=4)
+            st.pack(fill="both", expand=True)
+            
+            # Create textLogger
+            self.text_handler = TKConsoleHandler(st)     
+    
+            # Add the handler to logger
+            for l in self.loggers:
+                logger = l if isinstance(l,logging.Logger) else logging.getLogger(l)      
+                logger.addHandler(self.text_handler)
+    
+    return LogiGUI
+
 
 class LogListener(threading.Thread):
     def __init__(self, queue):
@@ -464,6 +474,8 @@ def start_listener():
 
 
 def init_tab(nb, processName):
+    """:type nb: tkinter.ttk.Notebook"""
+    LogiGUI = _create_logiGUI_class()
     fr = LogiGUI(nb)
     _tklogiprocesses[processName] = fr
     if _globals['queue'] is None: pass
@@ -477,6 +489,7 @@ def init_tab(nb, processName):
 
 
 def init_main_tab(nb):
+    """:type nb: tkinter.ttk.Notebook"""
     init_tab(nb,'MainProcess')
 
 
