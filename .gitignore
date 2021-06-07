@@ -15,8 +15,10 @@ test/test_io_update_settings_TEST3_COPY.yaml
 /.project
 /.pydevproject
 
-# Vscode
-/.vscode/
+# Visual
+*.pyproj
+.vs/
+.vscode/
 
 # C extensions
 *.so

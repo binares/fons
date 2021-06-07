@@ -157,12 +157,8 @@ def get_appdata_dir(appname, windows_select='Local', make=False):
         raise ValueError(windows_select)
     
     if _PLATFORM == 'Darwin':
-        from AppKit import NSSearchPathForDirectoriesInDomains
-        # http://developer.apple.com/DOCUMENTATION/Cocoa/Reference/Foundation/Miscellaneous/Foundation_Functions/Reference/reference.html#//apple_ref/c/func/NSSearchPathForDirectoriesInDomains
-        # NSApplicationSupportDirectory = 14
-        # NSUserDomainMask = 1
-        # True for expanding the tilde into a fully qualified path
-        appdata = os.path.join(NSSearchPathForDirectoriesInDomains(14, 1, True)[0], appname)
+        app_support = os.path.expanduser('~/Library/Application Support')
+        appdata = os.path.join(app_support, appname)
     elif _PLATFORM == 'Windows':
         local = os.path.normpath(os.environ['APPDATA']+'/../{}'.format(windows_select))
         appdata = os.path.join(local, appname)
