@@ -112,8 +112,24 @@ def dt_isround(dto, from_index):
         elif v != 0: return False
         
     return True
-    
-    
+
+
+def ts_round(timestamp, freq, base=0, shift=0, *, as_pydt=False, **kw):
+    """Round timestamp (seconds)"""
+    dto = dt_round(pydt(timestamp), freq, base=base, shift=shift, **kw)
+    if as_pydt:
+        return dto
+    return _timestamp(dto)
+
+
+def ms_round(timestamp, freq, base=0, shift=0, *, as_pydt=False, **kw):
+    """Round milliseconds (from epoch)"""
+    dto = dt_round(pydt_from_ms(timestamp), freq, base=base, shift=shift, **kw)
+    if as_pydt:
+        return dto
+    return timestamp_ms(dto)
+
+
 def dt_round(dto, freq, base=0, shift=0, **kw):
     """Round datetime object to nearest offset (freq) point.
        :param dto: datetime
@@ -680,6 +696,8 @@ def ctime():
 def ctime_ms():
     return round(time.time()*1000)
     
+
+_timestamp = timestamp
 
 #################################################
 

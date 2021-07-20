@@ -62,7 +62,7 @@ from fons.verify import (init_data, verify_data)
 
 import fons.time as time
 from fons.time import (dt_tuple, dt_indexing, dt_get, dt_assign, dt_round_to_digit,
-                         dt_isround, dt_round, dt_round2, dt_round_freq, dt_synced,
+                         dt_isround, dt_round, dt_round2, ts_round, ms_round, dt_round_freq, dt_synced,
                          _dt_round_bh, freq_to_td, freq_to_str, freq_to_offset,
                          dt_round_strf, dt_strp, _set_win_time, get_utctime,
                          _get_epoch, pydt, pydt_from_ms, timestamp, timestamp_ms,
