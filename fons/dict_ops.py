@@ -63,7 +63,9 @@ def apply_until_get(objs, f, condition='is not None', **kw):
     if not i:
         raise ValueError('No objs provided')
     
-    if 'return2' in kw:
+    if 'default' in kw:
+        return kw['default']
+    elif 'return2' in kw:
         return kw['return2']
     else:
         return v
