@@ -12,13 +12,12 @@ def test_node():
     n3 = Node()
     n.connect(n2)
     n.connect(n3)
-    
-    message = 'Something'
+
+    message = "Something"
     n.relay(message)
-    
+
     pk2 = lrc(n2.recv())
     assert pk2.data == message
-    
+
     pk3 = lrc(n3.recv())
     assert pk3.data == message
-    

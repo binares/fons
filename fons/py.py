@@ -35,34 +35,35 @@ def mro(*bases):
             # Remove candidate.
             if seq[0] == candidate:
                 del seq[0]
-                
+
     return res
 
 
 def rreload2(module, seen=None):
     """Recursively reload modules."""
-    if seen is None: seen = []
+    if seen is None:
+        seen = []
     if module in seen:
         return
-    
+
     reload(module)
     seen.append(module)
-    
+
     for attribute_name in dir(module):
         attribute = getattr(module, attribute_name)
         if type(attribute) is ModuleType:
-            rreload2(attribute,seen)
-            
-            
+            rreload2(attribute, seen)
+
+
 def rreload(module, paths=None, mdict=None):
     """Recursively reload modules."""
     if paths is None:
-        paths = ['']
+        paths = [""]
     if mdict is None:
         mdict = {}
     if module not in mdict:
         # modules reloaded from this module
-        mdict[module] = [] 
+        mdict[module] = []
     reload(module)
     for attribute_name in dir(module):
         attribute = getattr(module, attribute_name)
@@ -73,17 +74,26 @@ def rreload(module, paths=None, mdict=None):
                         mdict[module].append(attribute)
                         rreload(attribute, paths, mdict)
     reload(module)
-    #return mdict
-    
-    
-if __name__ == '__main__':
-    class A: pass
-    class B(A): pass
-    class C(B): pass
-    class D(B): pass
-    class E(C,D): pass
-    print(mro(C,D))
+    # return mdict
+
+
+if __name__ == "__main__":
+
+    class A:
+        pass
+
+    class B(A):
+        pass
+
+    class C(B):
+        pass
+
+    class D(B):
+        pass
+
+    class E(C, D):
+        pass
+
+    print(mro(C, D))
     print(E.__mro__[1:])
-    #print(object.__dict__)
-              
-    
+    # print(object.__dict__)

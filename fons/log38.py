@@ -1,4 +1,4 @@
-import sys,os,io
+import sys, os, io
 import traceback
 import logging
 from logging.handlers import QueueHandler
@@ -6,14 +6,14 @@ from logging.handlers import QueueHandler
 
 class FonsLogger(logging.Logger):
     # NB! findCaller() forwards INCOMPATIBLE with Python 3.11
-    def findCaller(self, stack_info=False, stacklevel=1): # stacklevel was added in 3.8
+    def findCaller(self, stack_info=False, stacklevel=1):  # stacklevel was added in 3.8
         """
         Find the stack frame of the caller so that we can note the source
         file name, line number and function name.
         """
         f = logging.currentframe()
-        #On some versions of IronPython, currentframe() returns None if
-        #IronPython isn't run with -X:Frames.
+        # On some versions of IronPython, currentframe() returns None if
+        # IronPython isn't run with -X:Frames.
         if f is not None:
             f = f.f_back
         orig_f = f
@@ -26,26 +26,26 @@ class FonsLogger(logging.Logger):
         while hasattr(f, "f_code"):
             co = f.f_code
             filename = os.path.normcase(co.co_filename)
-            # added _srcfile2 (this file), so that .llog/.__call__ 
+            # added _srcfile2 (this file), so that .llog/.__call__
             # method would not show as caller
-            if filename in (logging._srcfile, getattr(logging, '_srcfile2')): # EDITED
+            if filename in (logging._srcfile, getattr(logging, "_srcfile2")):  # EDITED
                 f = f.f_back
                 continue
             sinfo = None
             if stack_info:
                 sio = io.StringIO()
-                sio.write('Stack (most recent call last):\n')
+                sio.write("Stack (most recent call last):\n")
                 traceback.print_stack(f, file=sio)
                 sinfo = sio.getvalue()
-                if sinfo[-1] == '\n':
+                if sinfo[-1] == "\n":
                     sinfo = sinfo[:-1]
                 sio.close()
             rv = (co.co_filename, f.f_lineno, co.co_name, sinfo)
             break
         return rv
-    
+
     # Compatible with 3.11
-    def handle(self, record, *args, declude_with_queues=[], **kw): # EDITED
+    def handle(self, record, *args, declude_with_queues=[], **kw):  # EDITED
         """
         Call the handlers for the specified record.
 
@@ -53,13 +53,13 @@ class FonsLogger(logging.Logger):
         well as those created locally. Logger-level filtering is applied.
         """
         # `declude_with_queues` is necessary for avoiding infinite recursion
-        # in handling QueueHandler records (QueueHandler is used to connect 
+        # in handling QueueHandler records (QueueHandler is used to connect
         # with child processes)
         if (not self.disabled) and self.filter(record):
-            self.callHandlers(record, declude_with_queues=declude_with_queues) # EDITED
-    
+            self.callHandlers(record, declude_with_queues=declude_with_queues)  # EDITED
+
     # Compatible with 3.11
-    def callHandlers(self, record, *args, declude_with_queues=[], **kw): # EDITED
+    def callHandlers(self, record, *args, declude_with_queues=[], **kw):  # EDITED
         """
         Pass a record to all relevant handlers.
 
@@ -69,26 +69,30 @@ class FonsLogger(logging.Logger):
         logger with the "propagate" attribute set to zero is found - that
         will be the last logger whose handlers are called.
         """
-        q_check = lambda h: isinstance(h, QueueHandler) and h.queue in declude_with_queues # EDITED
+        q_check = (
+            lambda h: isinstance(h, QueueHandler) and h.queue in declude_with_queues
+        )  # EDITED
         c = self
         found = 0
         while c:
             for hdlr in c.handlers:
                 found = found + 1
-                if q_check(hdlr): pass # EDITED
+                if q_check(hdlr):
+                    pass  # EDITED
                 elif record.levelno >= hdlr.level:
                     hdlr.handle(record)
             if not c.propagate:
-                c = None    #break out
+                c = None  # break out
             else:
                 c = c.parent
-        if (found == 0):
+        if found == 0:
             if logging.lastResort:
-                if q_check(logging.lastResort): pass # EDITED
+                if q_check(logging.lastResort):
+                    pass  # EDITED
                 elif record.levelno >= logging.lastResort.level:
                     logging.lastResort.handle(record)
             elif logging.raiseExceptions and not self.manager.emittedNoHandlerWarning:
-                sys.stderr.write("No handlers could be found for logger"
-                                " \"%s\"\n" % self.name)
+                sys.stderr.write(
+                    "No handlers could be found for logger" ' "%s"\n' % self.name
+                )
                 self.manager.emittedNoHandlerWarning = True
-

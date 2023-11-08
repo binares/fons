@@ -1,7 +1,7 @@
-__version__ = '0.4.0'
-__author__ = 'binares'
+__version__ = "0.4.0"
+__author__ = "binares"
 
-'''
+"""
     Python library for various purposes.
     
     `fons` - latin for "source"
@@ -30,4 +30,4 @@ __author__ = 'binares'
         * time.dt_round - round datetime: dt_round(datetime.datetime(2016,3,1,2), 'D') -> datetime.datetime(2016,3,1)
         
         * verify.verify_data - assert the correctness of input data (useful for avoiding accidental user config mistypes)
-'''
+"""
