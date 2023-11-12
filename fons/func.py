@@ -696,7 +696,7 @@ def async_limitcalls(limit, interval=None, action="error", bound=None, **kw):
 
     def actual_decorator(func):
         PARAMS = (limit, interval, action, logging_lvl, retain_order)
-        LOCKS = {"func": asyncio.Lock(loop=loop), "instances": {}}
+        LOCKS = {"func": asyncio.Lock(), "instances": {}}
         HISTORY = {"func": deque(maxlen=limit), "instances": {}}
 
         bound2 = bound

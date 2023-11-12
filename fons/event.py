@@ -5,7 +5,14 @@ import queue as _queue
 from collections import defaultdict, namedtuple, Counter
 from concurrent.futures import Future
 
-from fons.aio import call_via_loop, call_via_loop_afut
+from fons.aio import (
+    call_via_loop,
+    call_via_loop_afut,
+    FonsEvent,
+    FonsQueue,
+    _check_is_fons_queue,
+    _check_is_fons_event,
+)
 from fons.func import get_arg_count
 import fons.log as _log
 from fons.reg import create_name
@@ -139,8 +146,8 @@ class Station:
         self,
         data=[],
         default_queue_size=0,
-        default_queue_cls=asyncio.Queue,
-        default_event_cls=asyncio.Event,
+        default_queue_cls=FonsQueue,
+        default_event_cls=FonsEvent,
         *,
         name=None,
         loops=[]
@@ -206,6 +213,11 @@ class Station:
         if maxsize is None:
             maxsize = self.default_queue_size
 
+        if isinstance(queue, asyncio.Queue):
+            _check_is_fons_queue(queue)
+        if isinstance(event, asyncio.Event):
+            _check_is_fons_event(event)
+
         if (
             queue is not None
             and event is not None
@@ -234,7 +246,7 @@ class Station:
             if queue is False:
                 _queue = None
             elif queue is None:
-                kw = {"loop": loop} if self.default_queue_cls is asyncio.Queue else {}
+                kw = {"loop": loop} if self.default_queue_cls is FonsQueue else {}
                 _queue = self.default_queue_cls(maxsize, **kw)
             elif isinstance(queue, asyncio.Queue) and queue._loop is not loop:
                 raise ValueError(
@@ -244,7 +256,7 @@ class Station:
             if event is False:
                 _event = None
             elif event is None:
-                kw = {"loop": loop} if self.default_event_cls is asyncio.Event else {}
+                kw = {"loop": loop} if self.default_event_cls is FonsEvent else {}
                 _event = self.default_event_cls(**kw)
             elif isinstance(event, asyncio.Event) and event._loop is not loop:
                 raise ValueError(
@@ -514,8 +526,8 @@ class Node:
 
         # Initiate with channel 0
         self.station = Station([{"channel": 0}])
-        self._queue = asyncio.Queue(loop=loop)
-        # self._user_queue = asyncio.Queue(maxlen=self.user_maxlen, loop=loop)
+        self._queue = FonsQueue(loop=loop)
+        # self._user_queue = FonsQueue(maxlen=self.user_maxlen, loop=loop)
         self.loop = self._queue._loop
         self.futures = {"serve": None}
         self.handlers = []
@@ -747,7 +759,7 @@ class NodeHandler:
         self.node = node
         if loop is None:
             loop = node.loop
-        self._queue = asyncio.Queue(loop=loop)
+        self._queue = FonsQueue(loop=loop)
         self.loop = self._queue._loop
         self.channels = []
 

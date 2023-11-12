@@ -16,6 +16,7 @@ import datetime
 dt = datetime.datetime
 td = datetime.timedelta
 
+from fons.aio import FonsEvent, FonsQueue
 from fons.debug import wrap_trylog
 import fons.log as _log
 from fons.processes import LogiProcess
@@ -300,8 +301,8 @@ class AsyncBaseTicker(BaseTicker):
         if loop is None:
             loop = asyncio.get_event_loop()
         self._inf["event_loop"] = loop
-        self._hidden["closed"] = asyncio.Event(loop=loop)
-        self._hidden["updated"] = asyncio.Event(loop=loop)
+        self._hidden["closed"] = FonsEvent(loop=loop)
+        self._hidden["updated"] = FonsEvent(loop=loop)
         # self._hidden['lock'] = asyncio.Lock()
         self._inf["callback"]["isCoro"] = asyncio.iscoroutinefunction(
             self._inf["callback"]["target"]
@@ -361,7 +362,7 @@ class AsyncBaseTicker(BaseTicker):
                         sleep_time = max(0.016, time)
 
                 try:
-                    await asyncio.wait_for(event.wait(), sleep_time, loop=loop)
+                    await asyncio.wait_for(event.wait(), sleep_time)
                     event.clear()
                     self._verify_is_open()
                     # Event was set. Break out.
@@ -1490,7 +1491,7 @@ class AsyncTickManager(AsyncBaseTicker, BaseTickManager):
         """Asynchronous version of TickManager."""
         super().__init__(None, loop=loop, allterminated=allterminated, **kw)
 
-        self._hidden["queue"] = asyncio.Queue(loop=self._inf["event_loop"])
+        self._hidden["queue"] = FonsQueue(loop=self._inf["event_loop"])
 
         if tickers is None:
             tickers = []
@@ -1738,7 +1739,7 @@ class Routine:
                 if x not in ("target", "args", "kwargs", "lock_id", "no_set_event_on")
             }
 
-            self._events[n] = event = asyncio.Event()
+            self._events[n] = event = FonsEvent()
 
             cb = tickConfig.get("callback")
             nseo = {x: y for x, y in params.items() if x == "no_set_event_on"}
@@ -1770,7 +1771,7 @@ class Routine:
 
         lock = self._locks[lock_id]
 
-        with await lock:
+        async with lock:
             if asyncio.iscoroutinefunction(method):
                 return await method(*args, **kwargs)
             else:

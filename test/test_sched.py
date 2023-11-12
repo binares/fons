@@ -9,7 +9,10 @@ td = datetime.timedelta
 import time
 import logging
 
+from fons.log import quick_logging
+
 logging.basicConfig(level=10)
+# quick_logging(3, True)
 
 from fons.sched import (
     Ticker,
@@ -400,8 +403,10 @@ def test_async_tick_manager_loop():
 
 def test_routine():
     async def rout_func(d={"i": 0}, break_at=2):
+        print(d)
         d["i"] += 1
         if d["i"] == break_at:
+            print("breaking")
             raise QuitException
 
     sched = {

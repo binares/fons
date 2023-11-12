@@ -1,6 +1,37 @@
 import concurrent.futures
 import asyncio
 import functools
+import platform
+
+_IS_PY_10 = platform.python_version_tuple() >= ("3", "10", "0")
+
+
+class FonsEvent(asyncio.Event):
+    def __init__(self, *, loop=None):
+        if _IS_PY_10:
+            super().__init__()
+            self._loop = loop or asyncio.get_event_loop()
+        else:
+            super().__init__(loop=loop)
+
+
+class FonsQueue(asyncio.Queue):
+    def __init__(self, maxsize=0, *, loop=None):
+        if _IS_PY_10:
+            super().__init__(maxsize)
+            self._loop = loop or asyncio.get_event_loop()
+        else:
+            super().__init__(maxsize, loop=loop)
+
+
+def _check_is_fons_queue(q):
+    if not isinstance(q, FonsQueue):
+        raise TypeError("Expected FonsQueue, got: {}".format(type(q)))
+
+
+def _check_is_fons_event(e):
+    if not isinstance(e, FonsEvent):
+        raise TypeError("Expected FonsEvent, got: {}".format(type(e)))
 
 
 def lrc(future_or_coro):
