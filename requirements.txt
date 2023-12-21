@@ -1,0 +1,12 @@
+aiohttp>=2.0
+aiohttp_socks>=0.2
+requests>=2.0
+cryptography>=1.8
+filelock>=3.0
+ntplib>=0.3.3
+# these three are already required by pandas
+#numpy>=1.19
+#python_dateutil>=2.1
+#pytz>=2011
+pandas>=0.21
+PyYAML>=3.10

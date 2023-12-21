@@ -4,6 +4,9 @@ from setuptools import setup, find_packages
 HERE = pathlib.Path(__file__).parent
 README = (HERE / "README.md").read_text()
 
+with open(HERE / "requirements.txt", encoding="utf-8") as f:
+    requirements = f.read().split("\n")
+
 setup(
     name="fons",
     version="0.4.0",
@@ -17,18 +20,5 @@ setup(
     license="MIT",
     packages=find_packages(exclude=["test"]),
     python_requires=">=3.5",
-    install_requires=[
-        "aiohttp>=2.0",
-        "aiohttp_socks>=0.2",
-        "requests>=2.0",
-        "cryptography>=1.8",
-        "filelock>=3.0",
-        "ntplib>=0.3.3",
-        # these three are already required by pandas
-        #'numpy>=1.19',
-        #'python_dateutil>=2.1',
-        #'pytz>=2011',
-        "pandas>=0.21",
-        "PyYAML>=3.10",
-    ],
+    install_requires=requirements,
 )
