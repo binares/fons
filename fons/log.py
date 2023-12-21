@@ -1,3 +1,6 @@
+# Note: alternatives to logging
+#  - https://eliot.readthedocs.io/en/stable/introduction.html
+#  - https://www.structlog.org/en/stable/
 import datetime
 
 dt = datetime.datetime
@@ -128,7 +131,9 @@ STREAMING_LOGGERS = ["L2", "T2"]
 
 _is_logger_overwritten = False
 _default_fmt = (
-    "%(asctime)s:%(levelname)s:%(name)s:%(module)s:%(funcName)s(%(lineno)d):%(message)s"
+    # "%(asctime)s:%(name)s:%(levelname)s:%(module)s:%(funcName)s(%(lineno)d):%(message)s"
+    # "%(asctime)s %(name)-2s %(levelname)-2s %(module)-2s %(funcName)-2s(%(lineno)d) :: %(message)s"
+    "%(asctime)s %(name)s %(levelname)s %(module)s:%(funcName)s(%(lineno)d) :: %(message)s"
 )
 _queue = multiprocessing.Queue(-1)
 _lock = multiprocessing.Lock()
@@ -236,7 +241,8 @@ def getFonsLogger(
     logger.setLevel(lvl)
 
     if fmt is None:
-        fmt = "%(asctime)s:%(levelname)s:%(name)s:%(funcName)s: %(message)s"
+        # fmt = "%(asctime)s:%(levelname)s:%(name)s:%(funcName)s: %(message)s"
+        fmt = _default_fmt
     elif fmt == "simpleformat":
         fmt = "%(asctime)s %(message)s"
 
@@ -258,6 +264,13 @@ def getFonsLogger(
 
 
 class Tee(object):
+    """
+    Replace the sys.stdout with this object, pass the original as files=[sys.stdout]
+     - will write to all the "files" it was initialized with (e.g. original sys.stdout)
+     - log to the logger it was initiated with (e.g. L2)
+    I.e. it syncs the original output to multiple streams and logs it to a logger
+    """
+
     def __init__(self, files=[], lvl=logging.INFO, logger=None):
         self.files = files
 
@@ -364,6 +377,11 @@ def _create_logiGUI_class():
 
 
 class LogListener(threading.Thread):
+    """
+    Handle incloming log records from queue, forwarded by child process'
+    only handler: QueueHandler
+    """
+
     def __init__(self, queue):
         super().__init__(name="LogListener", daemon=True)
         self.queue = queue
@@ -387,6 +405,20 @@ class LogListener(threading.Thread):
                 traceback.print_exc(file=sys.stderr)
 
     def handle(self, record):
+        try:
+            # Since some python version (3.8?) the QueueHandler seems to already pre-modify the
+            # record's message into its log-output formatted form. We have to strip it
+            msg = record.getMessage()
+            # format the message of the record using rootLogger handler's formatter
+            formatter = logging.root.handlers[0].formatter
+            new_msg = formatter.format(record)
+            added_msg = new_msg[: -len(msg)]
+            if msg[: len(added_msg)] == added_msg:
+                record.msg = msg[len(added_msg) :]
+        except Exception:
+            # traceback.print_exc(file=sys.stderr)
+            pass
+
         p_name = multiprocessing.current_process().name
         if not hasattr(record, "p_history"):
             record.p_history = [record.processName]
@@ -427,6 +459,12 @@ class LogListener(threading.Thread):
         # -- thus the below is just as a precaution for unforeseen situations (when _gui is located in a child process?))
 
         if not record_is_main and not isin_tk0:
+            """
+            # for debugging:
+            writer = (
+                sys.stdout if not isinstance(sys.stdout, Tee) else sys.stdout.files[0]
+            )
+            writer.write(repr(record))"""
             _logger = logging.getLogger(record.name)
             # add [self.queue] to eliminate possibility of recursion
             _logger.handle(record, declude_with_queues=[self.queue])
@@ -582,6 +620,10 @@ def quick_logging(test=2, add_stream_handlers=False):
 def standard_mp_logging(
     queue, level="INFO", fmt=None, use_FonsFormatter=True, TEST_MODE=False
 ):
+    """
+    This will be called by LogiProcess.run(), the params (incl `queue`) passed
+    from the parent process' `_globals`
+    """
     global _sys_stdout_assigned, _mp_logging_enabled
     _mp_logging_enabled = True
 
