@@ -4,6 +4,12 @@ import copy as _copy
 
 from fons.iter import unique
 
+"""
+The problem of this is that it has no enforced members or default values
+(like the commonly used `argparse` module does).
+Everything is dynamic.
+"""
+
 
 class Argv:
     def __init__(self, argv, apply={}):

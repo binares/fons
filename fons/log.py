@@ -1,6 +1,24 @@
 # Note: alternatives to logging
 #  - https://eliot.readthedocs.io/en/stable/introduction.html
 #  - https://www.structlog.org/en/stable/
+"""
+How python logging works?
+
+By default, only >=WARNING is printed out (without needing to call logging.basicConfig())
+  logger, logger2, ... have "DEBUG" set, and also don't need logging.basicConfig()
+
+when logging.basicConfig is called, it adds a StreamHandler to root logger, and a formatter (metadata includer) to that streamHandler
+ - now all loggers will print to console (bc every logger has rootLogger set as parent), and duplicate the output if they already
+   have a StreamHandler attached
+
+Manager stores all the loggers
+
+PROBLEMS:
+ 1. with pytest you need to add StreamHandler to all the loggers you want to print out anything at all
+     (this isn't fons.log specific; any logger fails)
+   solution_1: can be initiated with `quick_logging(test=2, add_stream_handlers=True)`
+   solution_2: use --log-cli-level=DEBUG   # https://docs.pytest.org/en/7.1.x/how-to/logging.html
+"""
 import datetime
 
 dt = datetime.datetime
@@ -120,11 +138,20 @@ logging.Logger.findCaller = FonsLogger.findCaller
 logging.Logger.handle = FonsLogger.handle
 logging.Logger.callHandlers = FonsLogger.callHandlers
 
-# This was necessary for something. For making compatible with new Logger methods?
+# The old rootLogger's class RootLogger (subclass of Logger) hasn't been updated to
+# include the new methods attached to Logger above
+# Q: What happens to module-level loggers already initiated?
+# A: ?they should work? .root is a class variable of Logger, it isn't attached to
+#    each instance separately (not ro Logger.manager.root)
 _rhandlers, _rfilters = logging.root.handlers, logging.root.filters
 logging.root = logging.RootLogger(logging.root.level)
 logging.root.handlers = _rhandlers
 logging.root.filters = _rfilters
+
+logging.Logger.root = logging.root
+logging.Logger.manager.root = logging.root
+# Can't reinitiate (nor need to) the manager itself, as it's attached to
+# each Logger instance individually
 
 NR_CONSOLE_LINES = 300
 STREAMING_LOGGERS = ["L2", "T2"]
@@ -169,11 +196,11 @@ standard_5 = _Standard_5()
 
 # The difference between logger and logger2 (and tlogger / tloggers) is that after calling setup_logging(),
 # logger2 (and tloggers) will *also* stream to console, while logger (and tlogger, tlogger0) only stream to file
-logger = standard_5.logger
-logger2 = standard_5.logger2
-tlogger = standard_5.tlogger
-tloggers = standard_5.tloggers
-tlogger0 = standard_5.tlogger0
+logger = standard_5.logger  # level = 10
+logger2 = standard_5.logger2  # ...
+tlogger = standard_5.tlogger  # level = 0
+tloggers = standard_5.tloggers  # ...
+tlogger0 = standard_5.tlogger0  # ...
 
 
 for _logger in standard_5[:2]:
@@ -235,13 +262,15 @@ def initiate_FonsFormat():
 def getFonsLogger(
     name=None, lvl="DEBUG", streams=True, fmt=None, use_FonsFormatter=True
 ):
+    """Initiate a logger.
+    :param streams: if True, adds StreamHandler with default or specified format
+    """
     if name is None:
         name = __name__
     logger = logging.getLogger(name)
     logger.setLevel(lvl)
 
     if fmt is None:
-        # fmt = "%(asctime)s:%(levelname)s:%(name)s:%(funcName)s: %(message)s"
         fmt = _default_fmt
     elif fmt == "simpleformat":
         fmt = "%(asctime)s %(message)s"
@@ -249,13 +278,13 @@ def getFonsLogger(
     remove_stream_handlers(logger)
 
     if streams:
-        console = logging.StreamHandler()
-        aFormatter = FonsFormatter if use_FonsFormatter else OldLoggingFormatter
+        stream_handler = logging.StreamHandler()  # prints to console
+        formatter_cls = FonsFormatter if use_FonsFormatter else OldLoggingFormatter
 
-        formatter = aFormatter(fmt=fmt)
-        console.setFormatter(formatter)
+        formatter = formatter_cls(fmt=fmt)
+        stream_handler.setFormatter(formatter)
 
-        logger.addHandler(console)
+        logger.addHandler(stream_handler)
 
     """if queue is not None:
         logger.addHandler(QueueHandler(queue))"""
@@ -605,16 +634,22 @@ def standard_logging(dir=None, f_ending=None, TEST_MODE=False, modules=None, **k
 
 
 def quick_logging(test=2, add_stream_handlers=False):
+    """
+    Add level "DEBUG" to all standard_5 loggers, and also to test loggers if test > 0
+    "If no stream handlers are added, it'll stream via root logger
+    """
     if add_stream_handlers:
-        remove_stream_handlers(logging.root)  # to avoid duplicate streaming
+        # To avoid duplicate streaming
+        remove_stream_handlers(logging.root)
     else:
         for _logger in standard_5:
             remove_stream_handlers(_logger)
         logging.basicConfig(level=10)  # stream via root handler
 
+    # Initiate the levels and handlers for the standard 5
     for i, _logger in enumerate(standard_5):
         level = 10 if i < (2 + test) else 0
-        getFonsLogger(_logger.name, level, add_stream_handlers)
+        getFonsLogger(_logger.name, level, streams=add_stream_handlers)
 
 
 def standard_mp_logging(
